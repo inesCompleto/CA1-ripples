@@ -31,7 +31,8 @@ for file_name in trial_files:
 #---- Load relevant data ----#
     data = joblib.load(file_path)
 
-    # Spike times during run trials
+    # Spike width, and spike times and mean rates during run trials
+    mean_rate = data['mean_rate'][1]
     spk_times = data['spike_times'][1]
     spk_width = data['spike_width'][1] 
     spk_width = np.nan_to_num(spk_width, nan=0)# Replace nan entries with 0
@@ -45,7 +46,7 @@ for file_name in trial_files:
     bins = np.arange(0, max_lag + bin_size, bin_size) # Create bins for histogram
     invalid_neurons = []
     weighted_mean = np.zeros(n_neurons)
-    
+        
     
     for n in range(n_neurons):                          # Count occurrences within each bin
         # Only consider neurons that are spiking enough
@@ -80,7 +81,9 @@ for file_name in trial_files:
 #---- Bursting index ----#
         # Compute the first moment (mean lag weighted by a autocorrelation, excluding t = 0)
         weighted_mean[n] = 0 if np.sum(autocorr[1:])==0 else np.average(lags[1:], weights=autocorr[1:])
-            
+        
+        data['BI'] = weighted_mean
+        
 #---- ID pyr and inhib cells ----#
     # Clustering pyramidal cells and interneurons
     total_neurons = range(n_neurons)
@@ -115,22 +118,3 @@ for file_name in trial_files:
 
     # Save the updated data dictionary back to the joblib file
     joblib.dump(data, file_path)
-
-#---- Plot results ----#
-    # Create the scatter plot
-    plt.figure(figsize=(3, 3))  # Set figure size
-
-    if pyr_cells.size > 0:  # Check if not empty
-        plt.scatter(pyr_cells[:, 2], pyr_cells[:, 1], color='orange', label='Pyramidal cells', s=40)
-    if inhib_cells.size > 0:
-        plt.scatter(inhib_cells[:, 2], inhib_cells[:, 1], color='blue', label='Inhibitory cells', s=40)
-
-    if remaining_cells.size > 0:
-        plt.scatter(remaining_cells[:, 2], remaining_cells[:, 1], color='grey', label='Remaining cells', s=40)
-
-    # Labels and title
-    plt.xlabel('Spike width (ms)', fontsize=15)
-    plt.ylabel('Bursting index (ms)', fontsize=15)
-    plt.title(f'{file_name}', fontsize=15)
-    plt.tight_layout()
-    plt.savefig(f'{file_name}.pdf', format='pdf', bbox_inches='tight')
