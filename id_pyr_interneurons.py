@@ -45,7 +45,7 @@ for file_name in trial_files:
     max_lag = 0.05 # maximum time diff. (lag) in seconds
     bins = np.arange(0, max_lag + bin_size, bin_size) # Create bins for histogram
     invalid_neurons = []
-    weighted_mean = np.zeros(n_neurons)
+    weighted_mean = np.full(n_neurons, np.nan)
         
     
     for n in range(n_neurons):                          # Count occurrences within each bin
@@ -81,8 +81,8 @@ for file_name in trial_files:
 #---- Bursting index ----#
         # Compute the first moment (mean lag weighted by a autocorrelation, excluding t = 0)
         weighted_mean[n] = 0 if np.sum(autocorr[1:])==0 else np.average(lags[1:], weights=autocorr[1:])
-        
-        data['BI'] = weighted_mean
+              
+    data['BI'] = weighted_mean
         
 #---- ID pyr and inhib cells ----#
     # Clustering pyramidal cells and interneurons
