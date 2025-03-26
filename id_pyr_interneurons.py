@@ -121,4 +121,3 @@ for file_name in trial_files:
             del f['cell_type']
         f.create_dataset('cell_type', data=cell_type.tolist())
 
-    f.close()
