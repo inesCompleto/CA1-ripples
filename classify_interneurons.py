@@ -31,7 +31,6 @@ for trial in trial_files:
 
         # find shortest ripple. use this to clip other ripples
         ripp_dur = np.diff(ripp_events, axis=1)
-        min_dur = min(ripp_dur)
 
         cell_type = f['cell_type'][:]
         mask_inhib = cell_type==b'inhib'
@@ -44,86 +43,65 @@ for trial in trial_files:
     if n_inhib==0:
         continue
 
-    # Align spikes relative to start of ripple
-    time_window_start = (-lag, min_dur/2)  # count spikes 100ms before beggining of ripple until min_dur/2
-    bins_start = np.arange(time_window_start[0], time_window_start[1] + bin_size, bin_size)  # Histogram bins
-
-    # Align spikes relative to end of ripple
-    time_window_end = (-min_dur/2, lag)  # count spikes 500ms before to 500ms after start (or end) of ripple
-    bins_end = np.arange(time_window_end[0], time_window_end[1] + bin_size, bin_size)  # Histogram bins
  
-    bin_centers_start = bins_start[:-1] + bin_size / 2  # Compute bin centers for plotting
-    bin_centers_end = bins_end[:-1] + bin_size / 2  # Compute bin centers for plotting
+    bin_size = 0.05 # sec
+    lag = 0.04
+
+    # Bins for histogram
+    bins_pre = np.arange(-1, 0, bin_size)  # Pre-ripple range from -1 to 0
+    bins_post = np.arange(1, 2 + bin_size, bin_size)  # Post-ripple range from 1 to 2
+    bins_ripp = np.linspace(0,1, len(bins_pre)+1)
+    bins_all = np.concatenate([bins_pre, bins_ripp[1:], bins_post[1:]])  # avoid duplicate edges
 
     # Create a figure with n rows and 2 columns for subplots
-    fig = plt.figure(figsize=(5, 2 * n_inhib))  # Adjust height based on n_inhib
-    gs = gridspec.GridSpec(n_inhib, 2, figure=fig, wspace=0.03, hspace=0.5)
+    fig, axs = plt.subplots(n_inhib, figsize=(5, 2*n_inhib))
+
+    if n_inhib==1:
+        axs = [axs]
 
     for n in range(n_inhib):
         print('Inhib neuron #', n)
         spk_times = spk_times_inhib[n]
 
-        aligned_spikes_start = []  # Store spike times relative to ripple start
-        aligned_spikes_end = []    # Store spike times relative to ripple end
+        pre_ripp_spks, ripp_spks, post_ripp_spks = [], [], []  # Store spike times before, during and after ripples
+        spks_scatter = [] # store spike times (non-normalized) for scatter plot
     
-        for start, end in ripp_events: # Loop through all ripple events and align spike times
-    
-            aligned_spikes_start.extend(spk_times[(spk_times >= start + time_window_start[0]) & (spk_times <= start + time_window_start[1])] - start) # time of spikes that happens shortly before or after beginning of ripple
-            aligned_spikes_end.extend(spk_times[(spk_times >= end + time_window_end[0]) & (spk_times <= end + time_window_end[1])] - end) # time of spikes that happens shortly before or after end of ripple
+        for j, (start, end) in enumerate(ripp_events): # Loop through all ripple events and align spike times
 
-        psth_start, _ = np.histogram(aligned_spikes_start, bins=bins_start)
-        psth_end, _ = np.histogram(aligned_spikes_end, bins=bins_end)
+            duration = ripp_dur[j] 
+
+            # Pre-ripple spikes (normalize to [-1, 0])
+            pre_ripp_spks.extend(((spk_times[(spk_times >= start - lag) & (spk_times <= start)] - (start - lag)) / lag) - 1)
+
+            # During ripple (normalized to [0, 1])
+            ripp_spks.extend((spk_times[(spk_times >= start) & (spk_times <= end)] - start) / duration)
+
+            # Post-ripple spikes (normalize to [1, 2])
+            post_ripp_spks.extend(((spk_times[(spk_times >= end) & (spk_times <= end + lag)] - end) / lag) + 1)
+
+            spks_to_plot = spk_times[(spk_times>= start-lag) & (spk_times<=end+lag)] - start
+            spks_scatter.append(spks_to_plot)
+
+        all_spikes = np.concatenate([pre_ripp_spks, ripp_spks, post_ripp_spks])
+
+        psth, bins = np.histogram(all_spikes, bins=bins_all)
 
         # Convert spike counts into mean firing rate (Hz)
-        mean_firing_rate_start = psth_start / (len(ripp_events) * bin_size)
-        mean_firing_rate_end = psth_end / (len(ripp_events) * bin_size)
+        mean_fr = psth / (len(ripp_events) * bin_size)
 
         # Compute standard error of the mean (SEM)
-        sem_start = np.sqrt(psth_start) / (len(ripp_events) * bin_size)  # Assuming Poisson variance: sqrt(N)
-        sem_end = np.sqrt(psth_end) / (len(ripp_events) * bin_size)
+        sem = np.sqrt(psth) / (len(ripp_events) * bin_size)  # Assuming Poisson variance: sqrt(N)
 
         # Plot results
-        # Create ax1 and ax2 for each row
-        ax1 = fig.add_subplot(gs[n, 0])  # Left subplot
-        ax2 = fig.add_subplot(gs[n, 1])  # Right subplot, sharing y-axis with ax1
+        bin_centers = (bins[:-1] + bins[1:]) / 2
 
-        # Plot mean firing rate with error bars as a line plot
-        ax1.plot(bin_centers_start, mean_firing_rate_start, color='b', linestyle='-', label="Aligned to Start")
-        ax1.axvline(x=0, color='black', linestyle='--')
-        ax1.fill_between(bin_centers_start, 
-                     [m - s for m, s in zip(mean_firing_rate_start, sem_start)], 
-                     [m + s for m, s in zip(mean_firing_rate_start, sem_start)], 
-                     color='b', alpha=0.3)
-        ax1.set_ylabel("Mean Firing Rate (Hz)")
-      #  ax1.set_title(f"Aligned to Ripple Start (n={n+1})")
+        axs[n].plot(bin_centers, mean_fr, color='b', linestyle='-')
+        axs[n].axvline(0, linestyle='--', color='gray', label='Ripple Start')
+        axs[n].axvline(1, linestyle='--', color='gray', label='Ripple End')
+        axs[n].fill_between(bin_centers, mean_fr - sem, mean_fr + sem, color='b', alpha=0.3)
 
-        ax2.plot(bin_centers_end, mean_firing_rate_end, color='b', linestyle='-', label="Aligned to End")
-        ax2.axvline(x=0, color='black', linestyle='--')
-        ax2.fill_between(bin_centers_end, 
-                     [m - s for m, s in zip(mean_firing_rate_end, sem_end)], 
-                     [m + s for m, s in zip(mean_firing_rate_end, sem_end)], 
-                     color='b', alpha=0.3)
-      #  ax2.set_title(f"Aligned to Ripple End (n={n+1})")
-        ax2.set_xlabel("Time (s)")
-
-        # Remove unnecessary axes for the broken effect
-        ax1.spines.right.set_visible(False)
-        ax2.spines.left.set_visible(False)
-        ax2.tick_params(left=False)  # Remove left ticks on ax2
-        ax2.set_yticks([]) 
-
-        # Add broken axis effect (diagonal lines)
-        d = 0.02  # Size of diagonal break
-        kwargs = dict(transform=ax1.transAxes, color='black', clip_on=False)
-
-        ax1.plot((1 - d, 1 + d), (-d, +d), **kwargs)
-        ax1.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
-
-        kwargs = dict(transform=ax2.transAxes, color='black', clip_on=False)
-        ax2.plot((-d, +d), (-d, +d), **kwargs)
-        ax2.plot((-d, +d), (1 - d, 1 + d), **kwargs)
 
     # Show the final figure with all subplots
-    fig.suptitle(f'{trial}')
+    fig.suptitle(f'Mean firing rate, {trial}')
     plt.savefig(f'{trial}.png')
     plt.show()
