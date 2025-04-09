@@ -7,7 +7,7 @@ import numpy as np
 import os
 import h5py
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
 plt.rcParams['axes.titley'] = 0.99
 
@@ -30,7 +30,7 @@ for trial in trial_files:
         ripp_events = ripp_group['postRun_sleep'][:]
 
         # find shortest ripple. use this to clip other ripples
-        ripp_dur = np.diff(ripp_events, axis=1)
+        ripp_dur = np.squeeze(np.diff(ripp_events, axis=1))
 
         cell_type = f['cell_type'][:]
         mask_inhib = cell_type==b'inhib'
@@ -54,10 +54,8 @@ for trial in trial_files:
     bins_all = np.concatenate([bins_pre, bins_ripp[1:], bins_post[1:]])  # avoid duplicate edges
 
     # Create a figure with n rows and 2 columns for subplots
-    fig, axs = plt.subplots(n_inhib, figsize=(5, 2*n_inhib))
-
-    if n_inhib==1:
-        axs = [axs]
+    fig = plt.figure(figsize=(12, 5 * n_inhib))
+    outer_grid = GridSpec(n_inhib, 2, figure=fig, wspace=0.3)
 
     for n in range(n_inhib):
         print('Inhib neuron #', n)
@@ -80,7 +78,7 @@ for trial in trial_files:
             post_ripp_spks.extend(((spk_times[(spk_times >= end) & (spk_times <= end + lag)] - end) / lag) + 1)
 
             spks_to_plot = spk_times[(spk_times>= start-lag) & (spk_times<=end+lag)] - start
-            spks_scatter.append(spks_to_plot)
+            spks_scatter.append((spks_to_plot, j)) # track ripple event index for y-axis
 
         all_spikes = np.concatenate([pre_ripp_spks, ripp_spks, post_ripp_spks])
 
@@ -95,11 +93,33 @@ for trial in trial_files:
         # Plot results
         bin_centers = (bins[:-1] + bins[1:]) / 2
 
-        axs[n].plot(bin_centers, mean_fr, color='b', linestyle='-')
-        axs[n].axvline(0, linestyle='--', color='gray', label='Ripple Start')
-        axs[n].axvline(1, linestyle='--', color='gray', label='Ripple End')
-        axs[n].fill_between(bin_centers, mean_fr - sem, mean_fr + sem, color='b', alpha=0.3)
+        # --- Left subplot: Mean firing rate with SEM (PSTH) ---
+        ax_psth = fig.add_subplot(outer_grid[n, 0])
+       
+        ax_psth.plot(bin_centers, mean_fr, color='b')
+        ax_psth.fill_between(bin_centers, mean_fr - sem, mean_fr + sem, color='b', alpha=0.3)
+        ax_psth.axvline(0, linestyle='--', color='gray', label='Ripple Start')
+        ax_psth.axvline(1, linestyle='--', color='gray', label='Ripple End')
+        ax_psth.set_title(f'Neuron {n} - PSTH')
+        ax_psth.set_ylabel('Firing Rate (Hz)')
+        ax_psth.set_xlabel('Time (normalized)')
 
+
+        # --- Right subplot: Raster plot ---
+        inner_grid = GridSpecFromSubplotSpec(len(spks_scatter), 1, subplot_spec=outer_grid[n, 1], hspace=0.2)
+        for spk_times_event, j in spks_scatter:
+            ax_raster = fig.add_subplot(inner_grid[j])
+            y = np.ones_like(spk_times_event) * j
+            ax_raster.scatter(spk_times_event, y, marker='.', color='b', s=10)
+            ax_raster.axvspan(0, ripp_dur[j], color='gray', alpha=0.3)
+            ax_raster.set_xlim([-lag, lag+ripp_dur[j]])
+            ax_raster.set_yticks([])
+            if j==len(spks_scatter)-1:
+                ax_raster.set_xticks([-lag, lag+ripp_dur[j]], ['-lag','lag'])
+                ax_raster.spines[['right', 'top', 'left']].set_visible(False)
+            else:
+                ax_raster.set_xticks([])
+                ax_raster.spines[['right', 'top', 'left', 'bottom']].set_visible(False)
 
     # Show the final figure with all subplots
     fig.suptitle(f'Mean firing rate, {trial}')
