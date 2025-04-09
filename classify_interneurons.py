@@ -31,6 +31,8 @@ for trial in trial_files:
 
         # find shortest ripple. use this to clip other ripples
         ripp_dur = np.squeeze(np.diff(ripp_events, axis=1))
+        mean_dur = round(np.mean(ripp_dur),2)
+        number_ripp = len(ripp_dur)
 
         cell_type = f['cell_type'][:]
         mask_inhib = cell_type==b'inhib'
@@ -42,7 +44,7 @@ for trial in trial_files:
         
     if n_inhib==0:
         continue
-
+   
  
     bin_size = 0.05 # sec
     lag = 0.04
@@ -54,8 +56,15 @@ for trial in trial_files:
     bins_all = np.concatenate([bins_pre, bins_ripp[1:], bins_post[1:]])  # avoid duplicate edges
 
     # Create a figure with n rows and 2 columns for subplots
-    fig = plt.figure(figsize=(12, 5 * n_inhib))
-    outer_grid = GridSpec(n_inhib, 2, figure=fig, wspace=0.3)
+    fig = plt.figure(figsize=(12, 5 * n_inhib+1))
+    
+    # Add an extra row at the top just for the title
+    outer_grid = GridSpec(n_inhib + 1, 2, figure=fig, height_ratios=[0.15] + [1]*n_inhib, hspace=0.5)
+
+    # Title goes in a dedicated Axes at top
+    ax_title = fig.add_subplot(outer_grid[0, :])
+    ax_title.axis('off')
+    ax_title.set_title(f'{trial} \n # ripples: {number_ripp} \n mean ripp duration: {mean_dur} sec', fontsize=16, fontweight='bold')
 
     for n in range(n_inhib):
         print('Inhib neuron #', n)
@@ -94,7 +103,7 @@ for trial in trial_files:
         bin_centers = (bins[:-1] + bins[1:]) / 2
 
         # --- Left subplot: Mean firing rate with SEM (PSTH) ---
-        ax_psth = fig.add_subplot(outer_grid[n, 0])
+        ax_psth = fig.add_subplot(outer_grid[n+1, 0])
        
         ax_psth.plot(bin_centers, mean_fr, color='b')
         ax_psth.fill_between(bin_centers, mean_fr - sem, mean_fr + sem, color='b', alpha=0.3)
@@ -106,7 +115,7 @@ for trial in trial_files:
 
 
         # --- Right subplot: Raster plot ---
-        inner_grid = GridSpecFromSubplotSpec(len(spks_scatter), 1, subplot_spec=outer_grid[n, 1], hspace=0.2)
+        inner_grid = GridSpecFromSubplotSpec(len(spks_scatter), 1, subplot_spec=outer_grid[n+1, 1], hspace=0.2)
         for spk_times_event, j in spks_scatter:
             ax_raster = fig.add_subplot(inner_grid[j])
             y = np.ones_like(spk_times_event) * j
@@ -122,6 +131,5 @@ for trial in trial_files:
                 ax_raster.spines[['right', 'top', 'left', 'bottom']].set_visible(False)
 
     # Show the final figure with all subplots
-    fig.suptitle(f'Mean firing rate, {trial}')
-    plt.savefig(f'{trial}.png')
+    plt.savefig(f'{trial}.png', bbox_inches='tight')
     plt.show()
