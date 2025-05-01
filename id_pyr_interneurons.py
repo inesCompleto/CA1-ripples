@@ -33,9 +33,9 @@ for file_name in trial_files:
     with h5py.File(file_path, 'a') as f:
 
         # Spike width, and spike times and mean rates during run trials
-        mean_rate = f['mean_rate'][1]
-        spk_times = f['spike_times'][1]
-        spk_width = f['spike_width'][1] 
+        mean_rate = f['mean_rate']['run']
+        spk_times = f['spike_times']['run']
+        spk_width = f['spike_width']['run'] 
         spk_width = np.nan_to_num(spk_width, nan=0)# Replace nan entries with 0
     
         n_neurons = len(spk_times)
