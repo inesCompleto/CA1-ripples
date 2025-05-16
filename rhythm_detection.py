@@ -15,10 +15,41 @@
     """
 
 import numpy as np
-from scipy.signal import welch
+from scipy.signal import welch. hilbert, find_peaks
+from scipy.signal import butter, buttord, filtfilt
+
 # Suppress MNE and joblib (verbose=False) logs
 import mne
 mne.set_log_level("ERROR")
+
+
+
+def detect_theta(filtered_lfp, eeg_sr, theta_band = (5,11)):
+    """
+    Returns:
+    valid_theta_cycles: index of beginning and end of theta cycles
+    """
+
+    # Measure phase
+    hilb = hilbert(filtered_lfp)
+    phase = np.angle(hilb, deg=True)
+    phase[phase < 0] = phase[phase < 0] + 360
+    mag = np.abs(hilb)
+
+    peaks,_ = find_peaks(-filtered_lfp, distance=eeg_sr / theta_band[1]) # Find peaks or troughs in the filtered_lfp
+    theta_cycles = list(zip(peaks[:-1], peaks[1:]))   # Each pair of consecutive troughs defines a theta cycle
+                                                  # (start, end) of each cycle
+
+    # keep cycles where the envelope power is high during that segment
+    threshold = 0.5 * np.mean(mag)
+    valid_theta_cycles = []
+    for start, end in theta_cycles:
+        if np.mean(mag[start:end]) > threshold:
+            valid_theta_cycles.append((start, end))
+
+    return valid_theta_cycles
+
+
 
 def detect_ripples(power_env, min_dur, max_dur, eeg_sr):
     """
