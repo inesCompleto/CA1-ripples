@@ -67,7 +67,7 @@ for trial in trial_files:
         if 'best_lfp_channel' in f:
             del f['best_lfp_channel']
         
-        f.create_dataset('best_lfp_channel', data=best_channel_idx)
+        f.create_dataset('best_lfp_channel_ripp', data=best_channel_idx)
 
         # 3) Detect ripple events on selected channel
         # 3.1 Find ripple events
@@ -83,7 +83,7 @@ for trial in trial_files:
         
         #---- 2.1 Get speed in cm/s ----#
         pos_sr = 50 # Hz
-
+ 
         state_run, state_sws, state_rem = rd.detect_brain_states(speed_sleep, pos_sr, lfp_sleep, eeg_sr)
 
         # 3.3 Detect coincident ripple events and slow-wave sleep events
@@ -98,5 +98,3 @@ for trial in trial_files:
             del group['postRun_sleep']
     
         group.create_dataset('postRun_sleep', data=valid_ripp_times)
-
-
