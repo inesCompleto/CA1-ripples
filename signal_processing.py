@@ -17,30 +17,41 @@ signal, or filtering a signal).
 
 
 import numpy as np
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, buttord, filtfilt
 from scipy.ndimage import uniform_filter1d  # Used for RMS smoothing
 
-def bandpass_filter(data, lowcut, highcut, fs, order=4):
+
+def bandpass_filter(data, f_low, f_high, fs, gpass=3, gstop=20):
     """
-     Design a Butterworth bandpass filter. (maybe use a FIR filter; see chat gpt comments on this)
+    Bandpass Butterworth filter with automatic order selection and zero-phase filtering.
 
-     The butter() function (from scipy.signal) expects the cutoff frequencies to be specified 
-     in terms of a fraction of the Nyquist frequency, i.e. the highest frequency that can be accurately represented 
-     (half of sampling rate)
+    Parameters:
+        data (np.ndarray): 1D input signal.
+        fs (float): Sampling frequency in Hz.
+        f_low (float): Lower cutoff frequency (Hz).
+        f_high (float): Upper cutoff frequency (Hz).
+        gpass (float): Maximum ripple in the passband (dB). Default is 3.
+        gstop (float): Minimum attenuation in the stopband (dB). Default is 20.
+
+    Returns:
+        np.ndarray: Filtered signal.
     """
+    nyq = fs / 2.0
 
-    # Compute Nyquist frequency
-    nyquist = 0.5 * fs
+    # Normalize cutoff frequencies
+    wp = [f_low / nyq, f_high / nyq]
 
-    # Normalize cutoff frequencies by the Nyquist
-    low = lowcut / nyquist   
-    high = highcut / nyquist
-    b, a = butter(order, [low, high], btype='band')
-    
-    # Apply the filter to the data
-    filtered_data = filtfilt(b, a, data) # The filtfilt() function applies the filter to the data.
-                                         # in both directions—forward and backward—which eliminates any phase shift 
-                                         # (i.e., it does not distort the time alignment of the data).
+    # Add stopband margin, and clamp
+    margin = 0.05
+    ws = [wp[0] - margin, wp[1] + margin]
+    ws = [max(ws[0], 0.001), min(ws[1], 0.999)]
+
+    # Determine filter order and cutoff
+    N, Wn = buttord(wp, ws, gpass, gstop)
+    b, a = butter(N, Wn, btype='band')
+
+    filtered_data = filtfilt(b, a, data)
+
     return filtered_data
 
 
