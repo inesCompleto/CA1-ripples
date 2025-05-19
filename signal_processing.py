@@ -17,41 +17,54 @@ signal, or filtering a signal).
 
 
 import numpy as np
-from scipy.signal import butter, buttord, filtfilt
+from scipy.signal import butter, buttord, sosfiltfilt
 from scipy.ndimage import uniform_filter1d  # Used for RMS smoothing
 
 
-def bandpass_filter(data, f_low, f_high, fs, gpass=3, gstop=20):
+def bandpass_filter(data, f_low, f_high, fs, fallback_order=3):
     """
-    Bandpass Butterworth filter with automatic order selection and zero-phase filtering.
+    Robust bandpass Butterworth filter with automatic gpass/gstop selection and fallback.
 
     Parameters:
-        data (np.ndarray): 1D input signal.
-        fs (float): Sampling frequency in Hz.
-        f_low (float): Lower cutoff frequency (Hz).
-        f_high (float): Upper cutoff frequency (Hz).
-        gpass (float): Maximum ripple in the passband (dB). Default is 3.
-        gstop (float): Minimum attenuation in the stopband (dB). Default is 20.
+        data (np.ndarray): 1D signal.
+        f_low (float): Lower cutoff (Hz).
+        f_high (float): Upper cutoff (Hz).
+        fs (float): Sampling frequency (Hz).
+        fallback_order (int): Order used if estimation fails (default = 3).
 
     Returns:
         np.ndarray: Filtered signal.
     """
     nyq = fs / 2.0
-
-    # Normalize cutoff frequencies
     wp = [f_low / nyq, f_high / nyq]
 
-    # Add stopband margin, and clamp
-    margin = 0.05
-    ws = [wp[0] - margin, wp[1] + margin]
-    ws = [max(ws[0], 0.001), min(ws[1], 0.999)]
+    # Auto-tune gpass/gstop based on center frequency
+    center_freq = (f_high + f_low) / 2
 
-    # Determine filter order and cutoff
-    N, Wn = buttord(wp, ws, gpass, gstop)
-    b, a = butter(N, Wn, btype='band')
+    if center_freq < 20:
+        gpass = 3
+        gstop = 20
+    elif center_freq < 100:
+        gpass = 2
+        gstop = 30
+    else:
+        gpass = 1
+        gstop = 50
 
-    filtered_data = filtfilt(b, a, data)
+    # Add stopband margins
+    margin = min(0.5 * wp[0], 0.5 * (1 - wp[1]), 0.05)
+    ws = [max(wp[0] - margin, 0.001), min(wp[1] + margin, 0.999)]
 
+    try:
+        N, Wn = buttord(wp, ws, gpass, gstop)
+        if N > 10 or N < 1:
+            raise ValueError(f"Unstable order estimated: N = {N}")
+        sos = butter(N, Wn, btype='band', output='sos')
+    except Exception as e:
+        print(f"[bandpass_filter] Warning: Falling back to fixed order={fallback_order} ({e})")
+        sos = butter(fallback_order, wp, btype='band', output='sos')
+        
+    filtered_data = sosfiltfilt(sos, data)
     return filtered_data
 
 
