@@ -15,14 +15,37 @@
     """
 
 import numpy as np
-from scipy.signal import welch. hilbert, find_peaks
+from scipy.signal import welch, hilbert, find_peaks
 from scipy.signal import butter, buttord, filtfilt
 
 # Suppress MNE and joblib (verbose=False) logs
 import mne
 mne.set_log_level("ERROR")
 
+def rayleigh_test(phases):
+    """
+    Calculate the normalized Rayleigh vector for a set of phase angles (in rad)
+    Formula: R = sqrt((1/n) * (sum(sin(phases))**2 + sum(cos(phases))**2))
 
+    Params:
+    phases (numpy array): phase angles in rad
+
+    Returns:
+    R (int): normalized Rayleigh vector magnitude
+    mean_angle: 
+    p_value: 
+    """
+
+    n = len(phases)
+    sum_sin = np.nansum(np.sin(phases))
+    sum_cos = np.nansum(np.cos(phases))
+
+    R = np.sqrt(sum_sin**2 + sum_cos**2)/n
+    mean_angle = np.arctan2(sum_sin, sum_cos)
+    Z = n*R**2 # Rayleigh's Z statistics
+    p_value = np.exp(-Z) # approzimation for large n
+
+    return R, mean_angle, p_value
 
 def detect_theta(filtered_lfp, eeg_sr, theta_band = (5,11)):
     """
