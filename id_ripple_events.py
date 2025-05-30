@@ -13,7 +13,7 @@ import numpy as np
 import os
 import h5py
 import signal_processing as sp
-import ripple_detection as rd
+import rhythm_detection as rd
 
 
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"                   # directory where data files are stored
