@@ -16,11 +16,10 @@ Consider a max lag of 50 ms. theta cycle has a time scale of 100ms, so consideri
 50 ms ensures we don't include the theta cycle.
 
 Note: bigger bursting index, less bursting.
-
 """
 
 #pathway_win = r"D:\data_CA1\pkl/"
-pathway_win = r"D:\data_CA1\hdf5"
+pathway_win = r"D:\data_CA1\hdf5_NoHighGain"
 trial_files = [f for f in os.listdir(pathway_win)]
 
 
@@ -35,7 +34,7 @@ for file_name in trial_files:
         # Spike width, and spike times and mean rates during run trials
         mean_rate = f['mean_rate']['run']
         spk_times = f['spike_times']['run']
-        spk_width = f['spike_width']['run'] 
+        spk_width = f['spike_width']['run']  
         spk_width = np.nan_to_num(spk_width, nan=0)# Replace nan entries with 0
     
         n_neurons = len(spk_times)
