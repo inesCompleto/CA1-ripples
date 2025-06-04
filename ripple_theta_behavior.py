@@ -100,29 +100,34 @@ for trial in trial_files:
         spk_times = spk_times_sleep[i]
         total_ripples = len(ripp_events)
         
+        # Compute firing rate of neuron i for the entire trial
+        full_firing_rate, time_bins = sp.compute_fr(spk_times, t_range=[0, trial_duration], bin_size=bin_fr)
+        
         fr_ripp = [] # store firing rate during ripples
         fr_nonripp = [] # store firing rate during non-ripple periods
         
         for j, (start,end) in enumerate(ripp_events): 
+            
+            # Convert time intervals to bin indices
+            start_bin = int(start / bin_fr)
+            end_bin = int(end / bin_fr)
+
             # Firing rate during ripples
-            firing_rate_ripp,_ = sp.compute_fr(spk_times, t_range=[start,end],bin_size=bin_fr)
-            fr_ripp.extend(firing_rate_ripp)
+            fr_ripp.extend(full_firing_rate[start_bin:end_bin])
 
             # firing rate during non-ripples 
             if j==0:
                 # Before first ripple
-                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[0,start],bin_size=bin_fr)
-                fr_nonripp.extend(firing_rate_nonripp)
+                fr_nonripp.extend(full_firing_rate[0:start_bin])
             else:
                 # Between ripples
                 previous_end = ripp_events[j-1][1]
-                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[previous_end,start],bin_size=bin_fr)
-                fr_nonripp.extend(firing_rate_nonripp)
+                previous_end_bin = int(previous_end / bin_fr)
+                fr_nonripp.extend(full_firing_rate[previous_end_bin:start_bin])
 
             if j==(total_ripples-1):
                 # After last ripple
-                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[end,trial_duration],bin_size=bin_fr)
-                fr_nonripp.extend(firing_rate_nonripp)
+                fr_nonripp.extend(full_firing_rate[end_bin:])
         
         mean_rate_ripp[i] = np.mean(fr_ripp)
         mean_rate_nonripp[i] = np.mean(fr_nonripp)
