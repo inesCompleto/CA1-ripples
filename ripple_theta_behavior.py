@@ -16,10 +16,6 @@ import rhythm_detection as rd
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"                   # directory where data files are stored
 trial_files = [f for f in os.listdir(pathway_win)] # Load name of all rat files
 
-# Define saving path
-save_path = r"D:\data_CA1\interneurons"
-os.makedirs(save_path, exist_ok=True)  # Create folder if it doesn't exist
-
 
 bin_fr = 0.005 # sec, for firing rate                 
 lag = 0.2
@@ -31,15 +27,12 @@ for trial in trial_files:
     print(trial)
         
     # Initialize empty lists for each variable
-    interneuron_id, mag_R, mean_phase, frequency = [], [], [], []
+    mag_R, mean_phase, frequency = [], [], []
 
     file_path = os.path.join(pathway_win, trial)
 
 # ---- Load data --- #
     with h5py.File(file_path,'r') as f:
-        
-        cell_type = f['cell_type'][:]
-        mask_inhib = cell_type==b'inhib'
         
         ripp_events = f['ripp_times']['postRun_sleep'][:]
         
@@ -53,30 +46,18 @@ for trial in trial_files:
         mean_dur = round(np.mean(ripp_dur),2)
         number_ripp = len(ripp_dur)
 
-
-        spk_times_sleep = f['spike_times']['postRun_sleep']
-        spk_sleep_inhib = spk_times_sleep[mask_inhib]
+ 
+        spk_times_sleep = f['spike_times']['postRun_sleep'][:]
         
-        n_inhib = len(spk_sleep_inhib)
-        
-    if n_inhib==0:
-        continue
-
-    fr = []
-
-    # Number of bins used for normalization
-    bins_notRipp = 10
-    bins_ripp = 10
+        total_neurons = len(spk_times_sleep)
     
-    mean_rate_ripp = np.empty(n_inhib) # store mean neuron rate during ripple period
-    mean_rate_nonripp = np.empty(n_inhib) # store mean neuron rate during non-ripple period
+    mean_rate_ripp = np.empty(total_neurons) # store mean neuron rate during ripple period
+    mean_rate_nonripp = np.empty(total_neurons) # store mean neuron rate during non-ripple period
     
 
-    for i in range(n_inhib):
+    for i in range(total_neurons):
 
-        spk_times = spk_sleep_inhib[i]
-        pre_ripp, ripp, post_ripp = [], [], [] # to store firing rates for all the ripple events
-        spks_scatter = [] # store spike times (non-normalized) for scatter plot
+        spk_times = spk_times_sleep[i]
 
         total_ripples = len(ripp_events)
         
@@ -152,11 +133,10 @@ for trial in trial_files:
     phase = np.angle(hilb, deg=True)
     phase[phase < 0] = phase[phase < 0] + 360
     
-    spk_run_inhib = spk_times_run[mask_inhib]
     
     # Check at which phase inhibitory neuron is spiking
-    for j in range(n_inhib):
-        spk_idx = np.array((spk_run_inhib[j] * eeg_sr).astype(int))
+    for j in range(total_neurons):
+        spk_idx = np.array((spk_times_run[j] * eeg_sr).astype(int))
         
         # 3. Get phase of the LFP at the spike times
         spike_phases = phase[spk_idx] 
@@ -169,33 +149,25 @@ for trial in trial_files:
         R, mean_angle, p_value = rd.rayleigh_test(spike_phases_rad)
 
         
-        # 5. Save info about inhibitory neurons in file
-        interneuron_id.append(j)
+        # 5. Save info about neurons in file
         mag_R.append(R)
         mean_phase.append(mean_angle)
         frequency.append(theta_peak)
-        
-    # Define trial name and HDF5 save path
-    trial_name = trial[:-3] # Removes the last 3 characters ('.h5')
-    hdf5_file_path = os.path.join(save_path, f"{trial_name}_interneurons.h5")
 
     # Save Data in HDF5 Format
-    with h5py.File(hdf5_file_path, 'a') as f:  # 'a' mode allows appending new variables
-        if "interneuron_id" in f:
-            del f['interneuron_id']
-        f.create_dataset(name='interneuron_id', data=interneuron_id)
+    with h5py.File(file_path, 'a') as f:  # 'a' mode allows appending new variables
         
         if "mag_R" in f:
             del f['mag_R']
         f.create_dataset(name='mag_R', data=mag_R)
         
-        if "mean_phase" in f:
-            del f['mean_phase']
-        f.create_dataset(name='mean_phase', data=mean_phase)
+        if "theta_phase" in f:
+            del f['theta_phase']
+        f.create_dataset(name='theta_phase', data=mean_phase)
         
-        if "frequency" in f:
-            del f['frequency']
-        f.create_dataset(name='frequency', data=frequency)
+        if "theta_frequency" in f:
+            del f['theta_frequency']
+        f.create_dataset(name='theta_frequency', data=frequency)
         
         if "neuron_rate_ripp" in f:
             del f['neuron_rate_ripp']
@@ -205,5 +177,5 @@ for trial in trial_files:
             del f['neuron_rate_nonripp']
         f.create_dataset(name='neuron_rate_nonripp', data=mean_rate_nonripp)
    
-    print(f"Saved: {hdf5_file_path}")
+    print(f"Saved: {file_path}")
         
