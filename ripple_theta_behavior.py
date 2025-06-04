@@ -26,7 +26,7 @@ save_path = r"D:\data_CA1\interneurons"
 os.makedirs(save_path, exist_ok=True)  # Create folder if it doesn't exist
 
 
-bin_size = 0.005 # sec, for firing rate 
+bin_fr = 0.005 # sec, for firing rate                 
 lag = 0.2
 
 eeg_sr = 4800
@@ -73,6 +73,8 @@ for trial in trial_files:
     bins_notRipp = 10
     bins_ripp = 10
     
+    mean_rate_ripp = np.empty(n_inhib) # store mean neuron rate during ripple period
+    mean_rate_nonripp = np.empty(n_inhib) # store mean neuron rate during non-ripple period
     
     # Create a figure with n rows and 2 columns for subplots
     fig = plt.figure(figsize=(12, 5 * n_inhib+1))
@@ -94,7 +96,30 @@ for trial in trial_files:
 
         total_ripples = len(ripp_events)
         
+        fr_ripp = [] # store firing rate during ripples
+        fr_nonripp = [] # store firing rate during non-ripple periods
+        
         for j, (start,end) in enumerate(ripp_events): 
+            
+            # -- Mean neuron firing rate during ripple and non-ripple period
+            # firing rate during ripples
+            firing_rate_ripp,_ = sp.compute_fr(spk_times, t_range=[start,end],bin_size=bin_fr)
+
+            fr_ripp.extend(firing_rate_ripp)
+
+            # firing rate during non-ripples 
+            if j==0:
+                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[0,start],bin_size=bin_fr)
+            else:
+                previous_end = ripp_events[j][1]
+                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[previous_end,start],bin_size=bin_fr)
+
+            fr_nonripp.extend(firing_rate_nonripp)
+
+            if j==(total_ripples-1):
+                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[end,-1],bin_size=bin_fr)
+                fr_nonripp.extend(firing_rate_nonripp)
+                    
             
             # Calculate appropriate lag samples considering adjacent ripples.
             lag = 0.05 # sec 
@@ -184,6 +209,9 @@ for trial in trial_files:
                 ax_raster.set_xticks([])
                 ax_raster.spines[['right', 'top', 'left', 'bottom']].set_visible(False)
 
+        mean_rate_ripp[i] = np.mean(fr_ripp)
+        mean_rate_nonripp[i] = np.mean(fr_nonripp) 
+
     # Show the final figure with all subplots
     plt.savefig(f'{trial}_ripp_sleep.png', bbox_inches='tight')
     plt.show()
@@ -198,7 +226,7 @@ for trial in trial_files:
 
     for ch in range(n_channels):
 
-        channel = lfp_run[ch]
+        channel = lfp_run[ch] 
         
         # Compute power spectral density (PSD)
         freqs, psd = welch(channel, fs=eeg_sr, nperseg=int(eeg_sr), scaling='density')
@@ -215,7 +243,7 @@ for trial in trial_files:
         peak_band_mask = (freqs >= (peak_freq - 0.5)) & (freqs <= (peak_freq + 0.5))
         peak_band_power = np.mean(psd[peak_band_mask])
         total_power = np.sum(psd)
-
+ 
         SNR_theta[ch] = peak_band_power / total_power if total_power > 0 else np.nan
 
     best_theta_ch_idx = np.argmax(SNR_theta)
@@ -291,18 +319,14 @@ for trial in trial_files:
         if "frequency" in f:
             del f['frequency']
         f.create_dataset(name='frequency', data=frequency)
+        
+        if "neuron_rate_ripp" in f:
+            del f['neuron_rate_ripp']
+        f.create_dataset(name='neuron_rate_ripp', data=mean_rate_ripp)
+        
+        if "neuron_rate_nonripp" in f:
+            del f['neuron_rate_nonripp']
+        f.create_dataset(name='neuron_rate_nonripp', data=mean_rate_nonripp)
    
     print(f"Saved: {hdf5_file_path}")
         
-        
-        
-        
-        
-        
-    
-    
-    
-    
-    
-    
-
