@@ -8,14 +8,9 @@ Classifies tpes of interneurons based on their behavior during ripple events
 import numpy as np
 import os
 import h5py
-import matplotlib.pyplot as plt
 from scipy.signal import welch, hilbert
 import signal_processing as sp
 import rhythm_detection as rd
-
-from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
-
-plt.rcParams['axes.titley'] = 0.99
 
 # Load times of ripple events
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"                   # directory where data files are stored
@@ -75,17 +70,6 @@ for trial in trial_files:
     
     mean_rate_ripp = np.empty(n_inhib) # store mean neuron rate during ripple period
     mean_rate_nonripp = np.empty(n_inhib) # store mean neuron rate during non-ripple period
-    
-    # Create a figure with n rows and 2 columns for subplots
-    fig = plt.figure(figsize=(12, 5 * n_inhib+1))
-    
-    # Add an extra row at the top just for the title
-    outer_grid = GridSpec(n_inhib + 1, 2, figure=fig, height_ratios=[0.15] + [1]*n_inhib, hspace=0.5)
-
-    # Title goes in a dedicated Axes at top
-    ax_title = fig.add_subplot(outer_grid[0, :])
-    ax_title.axis('off')
-    ax_title.set_title(f'{trial} \n # ripples: {number_ripp} \n mean ripp duration: {mean_dur} sec', fontsize=16, fontweight='bold')    
     
 
     for i in range(n_inhib):
@@ -166,56 +150,10 @@ for trial in trial_files:
             spks_to_plot = spk_times[(spk_times>= start-lag) & (spk_times<=end+lag)] - start
             spks_scatter.append((spks_to_plot, j)) # track ripple event index for y-axis
              
-  
-        pre_ripp_mean = np.mean(pre_ripp, axis=0)
-        pre_ripp_std = np.std(pre_ripp, axis=0)
-        
-        ripp_mean = np.mean(ripp, axis=0)
-        ripp_std = np.std(ripp, axis=0)
-        
-        post_ripp_mean = np.mean(post_ripp, axis=0)
-        post_ripp_std = np.std(post_ripp, axis=0)
-
-        all_fr = np.concatenate([pre_ripp_mean, ripp_mean, post_ripp_mean])
-        all_std = np.concatenate([pre_ripp_std, ripp_std, post_ripp_std])
-
-        # Plot results
-
-        # --- Left subplot: Mean firing rate with SEM (PSTH) ---
-        ax_fr = fig.add_subplot(outer_grid[i+1, 0])
-       
-        ax_fr.plot(all_fr, color='b')
-#        ax_fr.fill_between(x_axis, all_fr - all_std, all_fr + all_std, color='b', alpha=0.3)
-        ax_fr.axvline(x=bins_notRipp, linestyle='--', color='gray', label='Ripple Start')
-        ax_fr.axvline(x=(bins_notRipp+bins_ripp), linestyle='--', color='gray', label='Ripple End')
-        ax_fr.set_title(f'Neuron {i}')
-        ax_fr.set_ylabel('Firing Rate (Hz)')
-        ax_fr.set_xlabel('Time (normalized)')
-
-
-        # --- Right subplot: Raster plot ---
-        inner_grid = GridSpecFromSubplotSpec(len(spks_scatter), 1, subplot_spec=outer_grid[i+1, 1], hspace=0.2)
-        for spk_times_event, j in spks_scatter:
-            ax_raster = fig.add_subplot(inner_grid[j])
-            y = np.ones_like(spk_times_event) * j
-            ax_raster.scatter(spk_times_event, y, marker='.', color='b', s=10)
-            ax_raster.axvspan(0, ripp_dur[j], color='gray', alpha=0.3)
-            ax_raster.set_xlim([-lag, lag+ripp_dur[j]])
-            ax_raster.set_yticks([])
-            if j==len(spks_scatter)-1:
-                ax_raster.set_xticks([-lag, lag+ripp_dur[j]], ['-lag','lag'])
-                ax_raster.spines[['right', 'top', 'left']].set_visible(False)
-            else:
-                ax_raster.set_xticks([])
-                ax_raster.spines[['right', 'top', 'left', 'bottom']].set_visible(False)
 
         mean_rate_ripp[i] = np.mean(fr_ripp)
         mean_rate_nonripp[i] = np.mean(fr_nonripp) 
 
-    # Show the final figure with all subplots
-    plt.savefig(f'{trial}_ripp_sleep.png', bbox_inches='tight')
-    plt.show()
-    
     
 # ---- Behavior during theta, during run trial ---- #
     # 1) Selected best channel for theta detection
@@ -226,7 +164,7 @@ for trial in trial_files:
 
     for ch in range(n_channels):
 
-        channel = lfp_run[ch] 
+        channel = lfp_run[ch]
         
         # Compute power spectral density (PSD)
         freqs, psd = welch(channel, fs=eeg_sr, nperseg=int(eeg_sr), scaling='density')
@@ -276,21 +214,6 @@ for trial in trial_files:
         # Perform Rayleigh test
         R, mean_angle, p_value = rd.rayleigh_test(spike_phases_rad)
 
-        # 4. Plot circular histogram (rose plot)
-        plt.figure(figsize=(6, 6))
-        ax = plt.subplot(111, polar=True)
-        n_bins = 36
-        counts, bins = np.histogram(spike_phases_rad, bins=n_bins, range=(0, 2 * np.pi))
-        total_spks = sum(counts)
-        bin_centers = (bins[:-1] + bins[1:]) / 2
-        ax.bar(bin_centers, counts, width=2*np.pi/n_bins, bottom=0.0, color='grey', edgecolor='black', alpha=0.7)
-        ax.arrow(mean_angle, 0, 0, R*max(counts), width=0.1, color='red', length_includes_head=True)
-        ax.set_theta_zero_location('E')  # 0° at right
-        ax.set_theta_direction(-1)       # Clockwise
-        ax.set_title( f'Mean phase: {np.rad2deg(mean_angle):.2f}°, p-value: {p_value:.3f}, total spikes: {total_spks}' )
-        plt.tight_layout()
-        plt.savefig(f'{trial}_theta_run.png', bbox_inches='tight')
-        plt.show()
         
         # 5. Save info about inhibitory neurons in file
         interneuron_id.append(j)
