@@ -104,52 +104,6 @@ for trial in trial_files:
                 firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[end,-1],bin_size=bin_fr)
                 fr_nonripp.extend(firing_rate_nonripp)
                     
-            
-            # Calculate appropriate lag samples considering adjacent ripples.
-            lag = 0.05 # sec 
-            current_ripple = ripp_events[j]
-            
-            if j==0:     
-                next_ripple = ripp_events[j+1]
-                distance_to_next= next_ripple[0] - current_ripple[1]
-                lag = min(lag, distance_to_next)
-        
-            elif j==total_ripples-1:
-                previous_ripple = ripp_events[j-1]
-                distance_to_previous = current_ripple[0] - previous_ripple[1]
-                lag = min(lag, distance_to_previous)
-
-            else:
-                next_ripple = ripp_events[j+1]
-                distance_to_next = next_ripple[0] - current_ripple[1]
-                previous_ripple = ripp_events[j-1]
-                distance_to_previous = current_ripple[0] - previous_ripple[1]
-                lag = min(lag, distance_to_previous, distance_to_next)
-            
-            if lag==0:
-                lag=0.001       
-
-            bin_size_notRipp = lag/bins_notRipp
-            bin_size_ripp = (end-start)/bins_ripp
-        
-            # Pre-ripple fr normalized by number of bins
-            bin_edges_pre = np.linspace(start-lag, start, bins_notRipp+1)
-            firing_rate_pre,t_bin_pre = sp.compute_fr(spk_times, t_range=[start-lag, start], bin_size=bin_size_notRipp)
-            pre_ripp.append(firing_rate_pre)
-
-            # Ripple fr normalized by number of bins
-            bin_edges_ripp = np.linspace(start, end, bins_ripp+1)
-            firing_rate_ripp,t_bin_ripp = sp.compute_fr(spk_times, t_range=[start, end], bin_size=bin_size_ripp)
-            ripp.append(firing_rate_ripp)
-
-            # Post-ripple fr normalized by number of bins
-            bin_edges_post = np.linspace(end, end+lag, bins_notRipp+1)
-            firing_rate_post,t_bin_post = sp.compute_fr(spk_times, t_range=[end, end+lag], bin_size=bin_size_notRipp)
-            post_ripp.append(firing_rate_post)
-            
-            spks_to_plot = spk_times[(spk_times>= start-lag) & (spk_times<=end+lag)] - start
-            spks_scatter.append((spks_to_plot, j)) # track ripple event index for y-axis
-             
 
         mean_rate_ripp[i] = np.mean(fr_ripp)
         mean_rate_nonripp[i] = np.mean(fr_nonripp) 
