@@ -12,103 +12,48 @@ from scipy.signal import welch, hilbert
 import signal_processing as sp
 import rhythm_detection as rd
 
-# Load times of ripple events
-pathway_win = r"D:\data_CA1\hdf5_NoHighGain"                   # directory where data files are stored
+
+pathway_win = r"D:\data_CA1\hdf5_NoHighGain"       # directory where data files are stored
 trial_files = [f for f in os.listdir(pathway_win)] # Load name of all rat files
 
-
 bin_fr = 0.005 # sec, for firing rate                 
-lag = 0.2
-
 eeg_sr = 4800
+theta_range = (5,11)
+theta_bandwidth = 3 # Hz around peak
 
 for trial in trial_files:
     
     print(trial)
-        
-    # Initialize empty lists for each variable
-    mag_R, mean_phase, frequency = [], [], []
 
     file_path = os.path.join(pathway_win, trial)
 
 # ---- Load data --- #
     with h5py.File(file_path,'r') as f:
-        
         ripp_events = f['ripp_times']['postRun_sleep'][:]
-        
         lfp_run = f['lfp']['run'][:]
         spk_times_run = f['spike_times']['run'][:]
-
-        
-# ---- Behavior during ripples, during sleep ---- #        
-        # mean ripple duration
-        ripp_dur = np.squeeze(np.diff(ripp_events, axis=1))
-        mean_dur = round(np.mean(ripp_dur),2)
-        number_ripp = len(ripp_dur)
-
- 
         spk_times_sleep = f['spike_times']['postRun_sleep'][:]
         
-        total_neurons = len(spk_times_sleep)
-    
-    mean_rate_ripp = np.empty(total_neurons) # store mean neuron rate during ripple period
-    mean_rate_nonripp = np.empty(total_neurons) # store mean neuron rate during non-ripple period
-    
 
-    for i in range(total_neurons):
-
-        spk_times = spk_times_sleep[i]
-
-        total_ripples = len(ripp_events)
-        
-        fr_ripp = [] # store firing rate during ripples
-        fr_nonripp = [] # store firing rate during non-ripple periods
-        
-        for j, (start,end) in enumerate(ripp_events): 
-            
-            # -- Mean neuron firing rate during ripple and non-ripple period
-            # firing rate during ripples
-            firing_rate_ripp,_ = sp.compute_fr(spk_times, t_range=[start,end],bin_size=bin_fr)
-
-            fr_ripp.extend(firing_rate_ripp)
-
-            # firing rate during non-ripples 
-            if j==0:
-                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[0,start],bin_size=bin_fr)
-            else:
-                previous_end = ripp_events[j][1]
-                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[previous_end,start],bin_size=bin_fr)
-
-            fr_nonripp.extend(firing_rate_nonripp)
-
-            if j==(total_ripples-1):
-                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[end,-1],bin_size=bin_fr)
-                fr_nonripp.extend(firing_rate_nonripp)
-                    
-
-        mean_rate_ripp[i] = np.mean(fr_ripp)
-        mean_rate_nonripp[i] = np.mean(fr_nonripp) 
-
-    
-# ---- Behavior during theta, during run trial ---- #
-    # 1) Selected best channel for theta detection
-    # Choose highest SNR in the theta band for the RUN trial
+# ---- Selected best channel for theta detection ---- #
     n_channels = len(lfp_run) # number of LFP channels
 
-    SNR_theta = np.empty(n_channels) # to store signal-to-noise ratio for each channel
+    SNR_theta = np.zeros(n_channels) # to store signal-to-noise ratio for each channel
 
     for ch in range(n_channels):
-
         channel = lfp_run[ch]
         
         # Compute power spectral density (PSD)
         freqs, psd = welch(channel, fs=eeg_sr, nperseg=int(eeg_sr), scaling='density')
 
         # Identify the peak frequency in the theta range (5-11 Hz)
-        theta_band_mask = (freqs >= 5) & (freqs <= 11)
+        theta_band_mask = (freqs >= theta_range[0]) & (freqs <= theta_range[1])
+        if not np.any(theta_band_mask):
+            SNR_theta[ch] = 0.0
+            continue
+        
         theta_freqs = freqs[theta_band_mask]
         theta_psd = psd[theta_band_mask]
-
         peak_idx = np.argmax(theta_psd)
         peak_freq = theta_freqs[peak_idx]
 
@@ -119,63 +64,99 @@ for trial in trial_files:
  
         SNR_theta[ch] = peak_band_power / total_power if total_power > 0 else np.nan
 
+    # Select best channel
     best_theta_ch_idx = np.argmax(SNR_theta)
     selected_lfp = lfp_run[best_theta_ch_idx]
-
-    # Redefine theta range. best practice, given that theta might chang with age
+    
+    # Redefine theta range around peak
     freqs, psd = welch(selected_lfp, fs=eeg_sr, nperseg=int(eeg_sr), scaling='density')
     theta_peak = np.argmax(psd)
-    theta_band = (theta_peak-3,theta_peak+3)    
-    filtered_lfp =sp.bandpass_filter(selected_lfp, theta_band[0], theta_band[1], eeg_sr)  
-    
-    # Hilbert transform. Measure phase
+    theta_low = theta_peak - theta_bandwidth
+    theta_high = theta_peak + theta_bandwidth
+   
+    # Filter and extract phase
+    filtered_lfp =sp.bandpass_filter(selected_lfp, theta_low, theta_high, eeg_sr)  
     hilb = hilbert(filtered_lfp)
     phase = np.angle(hilb, deg=True)
-    phase[phase < 0] = phase[phase < 0] + 360
+
+    # Phase conversion
+    phase = np.where(phase<0, phase+360, phase)
+
+# ---- Get theta phase-locking info during RUN 
+#      and firing rate info during SLEEP for each neuron ---- #
+
+    total_neurons = len(spk_times_sleep)
     
+    mean_rate_ripp = np.zeros(total_neurons)    # store mean neuron rate during ripple period
+    mean_rate_nonripp = np.zeros(total_neurons) # store mean neuron rate during non-ripple period
+    mag_R = np.zeros(total_neurons)             # for theta phase-locking analysis
+    mean_phase = np.empty(total_neurons)        # for theta phase-locking analysis
     
-    # Check at which phase inhibitory neuron is spiking
-    for j in range(total_neurons):
-        spk_idx = np.array((spk_times_run[j] * eeg_sr).astype(int))
+    for i in range(total_neurons):
         
-        # 3. Get phase of the LFP at the spike times
+        # ---- Ripple analysis during SLEEP ---- #
+        spk_times = spk_times_sleep[i]
+
+        total_ripples = len(ripp_events)
+        
+        fr_ripp = [] # store firing rate during ripples
+        fr_nonripp = [] # store firing rate during non-ripple periods
+        
+        for j, (start,end) in enumerate(ripp_events): 
+            # Firing rate during ripples
+            firing_rate_ripp,_ = sp.compute_fr(spk_times, t_range=[start,end],bin_size=bin_fr)
+            fr_ripp.extend(firing_rate_ripp)
+
+            # firing rate during non-ripples 
+            if j==0:
+                # Before first ripple
+                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[0,start],bin_size=bin_fr)
+                fr_nonripp.extend(firing_rate_nonripp)
+            else:
+                # Between ripples
+                previous_end = ripp_events[j][1]
+                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[previous_end,start],bin_size=bin_fr)
+                fr_nonripp.extend(firing_rate_nonripp)
+
+            if j==(total_ripples-1):
+                # After last ripple
+                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[end,-1],bin_size=bin_fr)
+                fr_nonripp.extend(firing_rate_nonripp)
+                
+        mean_rate_ripp[i] = np.mean(fr_ripp) if fr_ripp else 0.0
+        mean_rate_nonripp[i] = np.mean(fr_nonripp) if fr_ripp else 0.0
+ 
+        # ---- Phase-locking analysis during RUN ---- #
+        # Convert spike times to indices
+        spk_idx = np.array((spk_times_run[i] * eeg_sr).astype(int))
+        
+        # Extract phases at spike times
         spike_phases = phase[spk_idx] 
-        
-        # Convert to radians for circular plot
         spike_phases_rad = np.deg2rad(spike_phases)
-#        mean_angle = stats.circmean(spike_phases_rad)
         
         # Perform Rayleigh test
         R, mean_angle, p_value = rd.rayleigh_test(spike_phases_rad)
 
-        
-        # 5. Save info about neurons in file
-        mag_R.append(R)
-        mean_phase.append(mean_angle)
-        frequency.append(theta_peak)
+        mag_R[i] = R
+        mean_phase[i] = mean_angle
 
-    # Save Data in HDF5 Format
-    with h5py.File(file_path, 'a') as f:  # 'a' mode allows appending new variables
+    # Save results
+    with h5py.File(file_path, 'a') as f:
         
-        if "mag_R" in f:
-            del f['mag_R']
-        f.create_dataset(name='mag_R', data=mag_R)
+        # List of datasets to update
+        datasets_to_update = {
+            'mag_R': mag_R,
+            'theta_phase': mean_phase,
+            'theta_frequency': theta_peak,
+            'neuron_rate_ripp': mean_rate_ripp,
+            'neuron_rate_nonripp': mean_rate_nonripp
+            }
         
-        if "theta_phase" in f:
-            del f['theta_phase']
-        f.create_dataset(name='theta_phase', data=mean_phase)
-        
-        if "theta_frequency" in f:
-            del f['theta_frequency']
-        f.create_dataset(name='theta_frequency', data=frequency)
-        
-        if "neuron_rate_ripp" in f:
-            del f['neuron_rate_ripp']
-        f.create_dataset(name='neuron_rate_ripp', data=mean_rate_ripp)
-        
-        if "neuron_rate_nonripp" in f:
-            del f['neuron_rate_nonripp']
-        f.create_dataset(name='neuron_rate_nonripp', data=mean_rate_nonripp)
+        # Remove existing datasets and create ones
+        for dataset_name, data in datasets_to_update.items():
+            if dataset_name in f:
+                del f[dataset_name]
+            f.create_dataset(name=dataset_name, data=data)
    
     print(f"Saved: {file_path}")
         
