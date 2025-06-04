@@ -11,7 +11,7 @@ import h5py
 from scipy.signal import welch, hilbert
 import signal_processing as sp
 import rhythm_detection as rd
-
+  
 
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"       # directory where data files are stored
 trial_files = [f for f in os.listdir(pathway_win)] # Load name of all rat files
@@ -33,6 +33,7 @@ for trial in trial_files:
         lfp_run = f['lfp']['run'][:]
         spk_times_run = f['spike_times']['run'][:]
         spk_times_sleep = f['spike_times']['postRun_sleep'][:]
+        lfp_sleep = f['lfp']['postRun_sleep'][:]
         
 
 # ---- Selected best channel for theta detection ---- #
@@ -95,8 +96,8 @@ for trial in trial_files:
     for i in range(total_neurons):
         
         # ---- Ripple analysis during SLEEP ---- #
+        trial_duration = len(lfp_sleep[0])/eeg_sr
         spk_times = spk_times_sleep[i]
-
         total_ripples = len(ripp_events)
         
         fr_ripp = [] # store firing rate during ripples
@@ -114,17 +115,17 @@ for trial in trial_files:
                 fr_nonripp.extend(firing_rate_nonripp)
             else:
                 # Between ripples
-                previous_end = ripp_events[j][1]
+                previous_end = ripp_events[j-1][1]
                 firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[previous_end,start],bin_size=bin_fr)
                 fr_nonripp.extend(firing_rate_nonripp)
 
             if j==(total_ripples-1):
                 # After last ripple
-                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[end,-1],bin_size=bin_fr)
+                firing_rate_nonripp,_ = sp.compute_fr(spk_times, t_range=[end,trial_duration],bin_size=bin_fr)
                 fr_nonripp.extend(firing_rate_nonripp)
-                
-        mean_rate_ripp[i] = np.mean(fr_ripp) if fr_ripp else 0.0
-        mean_rate_nonripp[i] = np.mean(fr_nonripp) if fr_ripp else 0.0
+        
+        mean_rate_ripp[i] = np.mean(fr_ripp)
+        mean_rate_nonripp[i] = np.mean(fr_nonripp)
  
         # ---- Phase-locking analysis during RUN ---- #
         # Convert spike times to indices
