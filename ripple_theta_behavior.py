@@ -11,7 +11,7 @@ import h5py
 from scipy.signal import welch, hilbert
 import signal_processing as sp
 import rhythm_detection as rd
-  
+from scipy import stats
 
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"       # directory where data files are stored
 trial_files = [f for f in os.listdir(pathway_win)] # Load name of all rat files
@@ -20,6 +20,7 @@ bin_fr = 0.005 # sec, for firing rate
 eeg_sr = 4800
 theta_range = (5,11)
 theta_bandwidth = 3 # Hz around peak
+lag_default = 0.05
 
 for trial in trial_files:
     
@@ -87,9 +88,7 @@ for trial in trial_files:
 #      and firing rate info during SLEEP for each neuron ---- #
 
     total_neurons = len(spk_times_sleep)
-    
-    mean_rate_ripp = np.zeros(total_neurons)    # store mean neuron rate during ripple period
-    mean_rate_nonripp = np.zeros(total_neurons) # store mean neuron rate during non-ripple period
+    zscore_ratio = np.zeros(total_neurons)
     mag_R = np.zeros(total_neurons)             # for theta phase-locking analysis
     mean_phase = np.empty(total_neurons)        # for theta phase-locking analysis
     
@@ -102,35 +101,48 @@ for trial in trial_files:
         
         # Compute firing rate of neuron i for the entire trial
         full_firing_rate, time_bins = sp.compute_fr(spk_times, t_range=[0, trial_duration], bin_size=bin_fr)
+        full_zscore = stats.zscore(full_firing_rate)
         
-        fr_ripp = [] # store firing rate during ripples
-        fr_nonripp = [] # store firing rate during non-ripple periods
+        Z_ripp = [] # store firing rate during ripples
+        Z_nonripp = [] # store firing rate during non-ripple periods
         
         for j, (start,end) in enumerate(ripp_events): 
-            
-            # Convert time intervals to bin indices
-            start_bin = int(start / bin_fr)
-            end_bin = int(end / bin_fr)
-
-            # Firing rate during ripples
-            fr_ripp.extend(full_firing_rate[start_bin:end_bin])
-
-            # firing rate during non-ripples 
-            if j==0:
-                # Before first ripple
-                fr_nonripp.extend(full_firing_rate[0:start_bin])
-            else:
-                # Between ripples
-                previous_end = ripp_events[j-1][1]
-                previous_end_bin = int(previous_end / bin_fr)
-                fr_nonripp.extend(full_firing_rate[previous_end_bin:start_bin])
-
-            if j==(total_ripples-1):
-                # After last ripple
-                fr_nonripp.extend(full_firing_rate[end_bin:])
+            # Compute lag to consider for each ripple
+            current_ripple = ripp_events[j]
         
-        mean_rate_ripp[i] = np.mean(fr_ripp)
-        mean_rate_nonripp[i] = np.mean(fr_nonripp)
+            if j==0:     
+                next_ripple = ripp_events[j+1]
+                distance_to_next= next_ripple[0] - current_ripple[1]
+                lag = min(lag_default, distance_to_next)
+    
+            elif j==total_ripples-1:
+                previous_ripple = ripp_events[j-1]
+                distance_to_previous = current_ripple[0] - previous_ripple[1]
+                lag = min(lag_default, distance_to_previous)
+
+            else:
+                next_ripple = ripp_events[j+1]
+                distance_to_next = next_ripple[0] - current_ripple[1]
+                previous_ripple = ripp_events[j-1]
+                distance_to_previous = current_ripple[0] - previous_ripple[1]
+                lag = min(lag_default, distance_to_previous, distance_to_next)
+
+            if lag<0.015 or start-lag<0:
+                continue 
+            
+            borders = np.array([start-lag, start, end, end+lag])/bin_fr
+            pre_ripp_zscore = full_zscore[int(borders[0]):int(borders[1])]
+            Z_nonripp.extend(pre_ripp_zscore)
+            
+            ripp_zscore = full_zscore[int(borders[1]):int(borders[2])]
+            Z_ripp.extend(ripp_zscore)
+            
+            post_ripp_zscore = full_zscore[int(borders[2]):int(borders[3])]
+            Z_nonripp.extend(post_ripp_zscore)
+            
+        mean_ripp_act = np.mean(Z_ripp)
+        mean_nonripp_act = np.mean(Z_nonripp)
+        zscore_ratio[i] = mean_ripp_act/mean_nonripp_act
  
         # ---- Phase-locking analysis during RUN ---- #
         # Convert spike times to indices
@@ -154,8 +166,7 @@ for trial in trial_files:
             'mag_R': mag_R,
             'theta_phase': mean_phase,
             'theta_frequency': theta_peak,
-            'neuron_rate_ripp': mean_rate_ripp,
-            'neuron_rate_nonripp': mean_rate_nonripp
+            'ratio_Z_ripp_act': zscore_ratio,
             }
         
         # Remove existing datasets and create ones
