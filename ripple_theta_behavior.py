@@ -12,6 +12,8 @@ from scipy.signal import welch, hilbert
 import signal_processing as sp
 import rhythm_detection as rd
 from scipy import stats
+from scipy.interpolate import interp1d
+
 
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"       # directory where data files are stored
 trial_files = [f for f in os.listdir(pathway_win)] # Load name of all rat files
@@ -28,7 +30,7 @@ for trial in trial_files:
 
     file_path = os.path.join(pathway_win, trial)
 
-# ---- Load data --- #
+    # ---- Load data --- #
     with h5py.File(file_path,'r') as f:
         ripp_events = f['ripp_times']['postRun_sleep'][:]
         lfp_run = f['lfp']['run'][:]
@@ -37,7 +39,7 @@ for trial in trial_files:
         lfp_sleep = f['lfp']['postRun_sleep'][:]
         
 
-# ---- Selected best channel for theta detection ---- #
+    # ---- Selected best channel for theta detection ---- #
     n_channels = len(lfp_run) # number of LFP channels
 
     SNR_theta = np.zeros(n_channels) # to store signal-to-noise ratio for each channel
@@ -83,6 +85,10 @@ for trial in trial_files:
 
     # Phase conversion
     phase = np.where(phase<0, phase+360, phase)
+    
+    # Interpolator for phase values
+    eeg_time = np.arange(len(phase)) / eeg_sr
+    phase_interpolator = interp1d(eeg_time, phase, kind='linear', bounds_error=False, fill_value="extrapolate")
 
 # ---- Get theta phase-locking info during RUN 
 #      and firing rate info during SLEEP for each neuron ---- #
@@ -145,19 +151,16 @@ for trial in trial_files:
         zscore_ratio[i] = mean_ripp_act/mean_nonripp_act
  
         # ---- Phase-locking analysis during RUN ---- #
-        # Convert spike times to indices
-        spk_idx = np.array((spk_times_run[i] * eeg_sr).astype(int))
-        
-        # Extract phases at spike times
-        spike_phases = phase[spk_idx] 
-        spike_phases_rad = np.deg2rad(spike_phases)
+        # Get interpolated phase values at spike times
+        spike_phases = phase_interpolator(spk_times_run[i])
+        spike_phases_rad = np.deg2rad(spike_phases)        
         
         # Perform Rayleigh test
-        R, mean_angle, p_value = rd.rayleigh_test(spike_phases_rad)
+        R, mean_angle, _ = rd.rayleigh_test(spike_phases_rad)
 
         mag_R[i] = R
         mean_phase[i] = mean_angle
-
+  
     # Save results
     with h5py.File(file_path, 'a') as f:
         
@@ -168,7 +171,7 @@ for trial in trial_files:
             'theta_frequency': theta_peak,
             'ratio_Z_ripp_act': zscore_ratio,
             }
-        
+         
         # Remove existing datasets and create ones
         for dataset_name, data in datasets_to_update.items():
             if dataset_name in f:
