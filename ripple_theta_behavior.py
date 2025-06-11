@@ -23,6 +23,7 @@ eeg_sr = 4800
 theta_range = (5,11)
 theta_bandwidth = 3 # Hz around peak
 lag_default = 0.05
+n_shuffles = 1000
 
 for trial in trial_files:
     
@@ -38,6 +39,8 @@ for trial in trial_files:
         spk_times_sleep = f['spike_times']['postRun_sleep'][:]
         lfp_sleep = f['lfp']['postRun_sleep'][:]
         
+        duration_trial = len(lfp_run[0])/eeg_sr
+        duration_sleep = len(lfp_sleep[0])/eeg_sr
 
     # ---- Selected best channel for theta detection ---- #
     n_channels = len(lfp_run) # number of LFP channels
@@ -76,7 +79,7 @@ for trial in trial_files:
     freqs, psd = welch(selected_lfp, fs=eeg_sr, nperseg=int(eeg_sr), scaling='density')
     theta_peak = np.argmax(psd)
     theta_low = theta_peak - theta_bandwidth
-    theta_high = theta_peak + theta_bandwidth
+    theta_high = theta_peak + theta_bandwidth  
    
     # Filter and extract phase
     filtered_lfp =sp.bandpass_filter(selected_lfp, theta_low, theta_high, eeg_sr)  
@@ -96,17 +99,17 @@ for trial in trial_files:
     total_neurons = len(spk_times_sleep)
     zscore_ratio = np.zeros(total_neurons)
     mag_R = np.zeros(total_neurons)             # for theta phase-locking analysis
-    mean_phase = np.empty(total_neurons)        # for theta phase-locking analysis
+    mean_phase = np.zeros(total_neurons)        # for theta phase-locking analysis
+    phase_lock_sign = np.zeros(total_neurons)
     
     for i in range(total_neurons):
         
         # ---- Ripple analysis during SLEEP ---- #
-        trial_duration = len(lfp_sleep[0])/eeg_sr
         spk_times = spk_times_sleep[i]
         total_ripples = len(ripp_events)
         
         # Compute firing rate of neuron i for the entire trial
-        full_firing_rate, time_bins = sp.compute_fr(spk_times, t_range=[0, trial_duration], bin_size=bin_fr)
+        full_firing_rate, time_bins = sp.compute_fr(spk_times, t_range=[0, duration_sleep], bin_size=bin_fr)
         full_zscore = stats.zscore(full_firing_rate)
         
         Z_ripp = [] # store firing rate during ripples
@@ -160,6 +163,26 @@ for trial in trial_files:
 
         mag_R[i] = R
         mean_phase[i] = mean_angle
+        
+        # Shuffle (permutation) test
+        mag_R_shuffled = []
+        for _ in range(n_shuffles):
+            shift = np.random.uniform(0, duration_trial)
+            shifted_times = (spk_times + shift) % duration_trial
+            shuffled_phases = phase_interpolator(shifted_times)
+            shuffled_phases_rad = np.deg2rad(shuffled_phases) 
+
+            shuffled_R, *_ = rd.rayleigh_test(shuffled_phases_rad)         
+            mag_R_shuffled.append(shuffled_R)
+
+        mag_R_shuffled = np.array(mag_R_shuffled)
+
+        # Significance threshold
+        threshold = np.percentile(mag_R_shuffled, 95)  # 95% confidence
+        
+        if R>threshold:
+            phase_lock_sign[i] = 1
+         
   
     # Save results
     with h5py.File(file_path, 'a') as f:
@@ -169,7 +192,8 @@ for trial in trial_files:
             'mag_R': mag_R,
             'theta_phase': mean_phase,
             'theta_frequency': theta_peak,
-            'ratio_Z_ripp_act': zscore_ratio,
+            'theta_lock_sign': phase_lock_sign,
+            'ratio_Z_ripp_act': zscore_ratio
             }
          
         # Remove existing datasets and create ones
