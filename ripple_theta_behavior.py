@@ -24,6 +24,8 @@ theta_range = (5,11)
 theta_bandwidth = 3 # Hz around peak
 lag_default = 0.05
 n_shuffles = 1000
+bins_notRipp = 10
+bins_ripp = 10
 
 for trial in trial_files:
     
@@ -98,9 +100,10 @@ for trial in trial_files:
 
     total_neurons = len(spk_times_sleep)
     zscore_ratio = np.zeros(total_neurons)
-    mag_R = np.zeros(total_neurons)             # for theta phase-locking analysis
-    mean_phase = np.zeros(total_neurons)        # for theta phase-locking analysis
-    phase_lock_sign = np.zeros(total_neurons)
+    mag_R = np.zeros(total_neurons)           # for theta phase-locking analysis
+    mean_phase = np.zeros(total_neurons)      # for theta phase-locking analysis
+    phase_lock_sign = np.zeros(total_neurons) # is theta phase-lock significant?
+    normalized_zscore = []                          # to store normalize zscored f.r. before,during and after ripp
     
     for i in range(total_neurons):
         
@@ -114,6 +117,7 @@ for trial in trial_files:
         
         Z_ripp = [] # store firing rate during ripples
         Z_nonripp = [] # store firing rate during non-ripple periods
+        pre_ripp, ripp, post_ripp = [], [], [] # store normalized zscored f.r. before, during and after ripp
         
         for j, (start,end) in enumerate(ripp_events): 
             # Compute lag to consider for each ripple
@@ -141,14 +145,26 @@ for trial in trial_files:
             
             borders = np.array([start-lag, start, end, end+lag])/bin_fr
             pre_ripp_zscore = full_zscore[int(borders[0]):int(borders[1])]
-            Z_nonripp.extend(pre_ripp_zscore)
+            Z_nonripp.extend(pre_ripp_zscore) # too compute mean non ripp activity
+            norm_pre = sp.norm_zscore(pre_ripp_zscore, bin_zscore=bins_notRipp) # Normalized time
+            pre_ripp.append(norm_pre) # to compute av firing pattern before/during and after ripp
             
             ripp_zscore = full_zscore[int(borders[1]):int(borders[2])]
             Z_ripp.extend(ripp_zscore)
+            norm_ripp = sp.norm_zscore(ripp_zscore, bin_zscore=bins_ripp)
+            ripp.append(norm_ripp)
             
             post_ripp_zscore = full_zscore[int(borders[2]):int(borders[3])]
             Z_nonripp.extend(post_ripp_zscore)
-            
+            norm_post = sp.norm_zscore(post_ripp_zscore, bin_zscore=bins_notRipp)
+            post_ripp.append(norm_post)
+        
+        pre_ripp_mean = np.mean(pre_ripp, axis=0)
+        ripp_mean = np.mean(ripp, axis=0)   
+        post_ripp_mean = np.mean(post_ripp, axis=0)
+        all_fr = np.concatenate([pre_ripp_mean, ripp_mean, post_ripp_mean]) 
+        normalized_zscore.append(all_fr)
+        
         mean_ripp_act = np.mean(Z_ripp)
         mean_nonripp_act = np.mean(Z_nonripp)
         zscore_ratio[i] = mean_ripp_act/mean_nonripp_act
@@ -193,6 +209,7 @@ for trial in trial_files:
             'theta_phase': mean_phase,
             'theta_frequency': theta_peak,
             'theta_lock_sign': phase_lock_sign,
+            'norm_Z_ripp': normalized_zscore,
             'ratio_Z_ripp_act': zscore_ratio
             }
          
