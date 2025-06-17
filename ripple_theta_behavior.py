@@ -86,10 +86,7 @@ for trial in trial_files:
     # Filter and extract phase
     filtered_lfp =sp.bandpass_filter(selected_lfp, theta_low, theta_high, eeg_sr)  
     hilb = hilbert(filtered_lfp)
-    phase = np.angle(hilb, deg=True)
-
-    # Phase conversion
-    phase = np.where(phase<0, phase+360, phase)
+    phase = np.angle(hilb) # phase in rad [-pi,pi]
     
     # Interpolator for phase values
     eeg_time = np.arange(len(phase)) / eeg_sr
@@ -171,11 +168,10 @@ for trial in trial_files:
  
         # ---- Phase-locking analysis during RUN ---- #
         # Get interpolated phase values at spike times
-        spike_phases = phase_interpolator(spk_times_run[i])
-        spike_phases_rad = np.deg2rad(spike_phases)        
+        spike_phases = phase_interpolator(spk_times_run[i])       
         
         # Perform Rayleigh test
-        R, mean_angle, _ = rd.rayleigh_test(spike_phases_rad)
+        R, mean_angle, _ = rd.rayleigh_test(spike_phases)
 
         mag_R[i] = R
         mean_phase[i] = mean_angle
