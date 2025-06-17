@@ -20,6 +20,30 @@ import numpy as np
 from scipy.signal import butter, buttord, sosfiltfilt
 from scipy.ndimage import uniform_filter1d  # Used for RMS smoothing
 
+def norm_zscore(zscore, bin_zscore=10):
+    """
+    Normalize a zscore array using a fixed number of bins
+
+    1) Check if interpolation is needed.
+    2) Interpolate if the array is too short.
+    3) Apply temporal binning afterward.
+    """
+    original_length = len(zscore)
+
+    # Step 1: Interpolate if too few points
+    if original_length < bin_zscore:
+        # Interpolate to bin_zscore points
+        original_time = np.linspace(0, 1, original_length)
+        target_time = np.linspace(0, 1, bin_zscore)
+        interp_func = interp1d(original_time, zscore, kind='linear', fill_value='extrapolate')
+        zscore_interp = interp_func(target_time)
+        return zscore_interp
+
+    # Step 2: Temporal binning
+    bins = np.linspace(0, original_length, bin_zscore + 1, dtype=int)
+    binned = [np.mean(zscore[bins[i]:bins[i+1]]) for i in range(bin_zscore)]
+    return np.array(binned)
+
 
 def bandpass_filter(data, f_low, f_high, fs, fallback_order=3):
     """
