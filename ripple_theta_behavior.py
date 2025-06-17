@@ -101,15 +101,14 @@ for trial in trial_files:
     mean_phase = np.zeros(total_neurons)      # for theta phase-locking analysis
     phase_lock_sign = np.zeros(total_neurons) # is theta phase-lock significant?
     normalized_zscore = []                          # to store normalize zscored f.r. before,during and after ripp
-    
+
     for i in range(total_neurons):
         
         # ---- Ripple analysis during SLEEP ---- #
-        spk_times = spk_times_sleep[i]
         total_ripples = len(ripp_events)
         
         # Compute firing rate of neuron i for the entire trial
-        full_firing_rate, time_bins = sp.compute_fr(spk_times, t_range=[0, duration_sleep], bin_size=bin_fr)
+        full_firing_rate, time_bins = sp.compute_fr(spk_times_sleep[i], t_range=[0, duration_sleep], bin_size=bin_fr)
         full_zscore = stats.zscore(full_firing_rate)
         
         Z_ripp = [] # store firing rate during ripples
@@ -170,6 +169,7 @@ for trial in trial_files:
         # Get interpolated phase values at spike times
         spike_phases = phase_interpolator(spk_times_run[i])       
         
+        
         # Perform Rayleigh test
         R, mean_angle, _ = rd.rayleigh_test(spike_phases)
 
@@ -180,11 +180,9 @@ for trial in trial_files:
         mag_R_shuffled = []
         for _ in range(n_shuffles):
             shift = np.random.uniform(0, duration_trial)
-            shifted_times = (spk_times + shift) % duration_trial
+            shifted_times = (spk_times_run[i] + shift) % duration_trial
             shuffled_phases = phase_interpolator(shifted_times)
-            shuffled_phases_rad = np.deg2rad(shuffled_phases) 
-
-            shuffled_R, *_ = rd.rayleigh_test(shuffled_phases_rad)         
+            shuffled_R, *_ = rd.rayleigh_test(shuffled_phases)         
             mag_R_shuffled.append(shuffled_R)
 
         mag_R_shuffled = np.array(mag_R_shuffled)
@@ -194,8 +192,7 @@ for trial in trial_files:
         
         if R>threshold:
             phase_lock_sign[i] = 1
-         
-  
+          
     # Save results
     with h5py.File(file_path, 'a') as f:
         
