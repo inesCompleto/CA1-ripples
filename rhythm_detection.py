@@ -49,14 +49,16 @@ def rayleigh_test(phases):
 
 def detect_theta(filtered_lfp, eeg_sr, theta_band = (5,11)):
     """
+    1) Identifies discrete theta cycles instead of treating all time as one continuous theta rhythm
+    2) Quality control - only keeps cycles with high envelope power (strong theta)
+    3) Natural cycle boundaries - uses actual peaks/troughs instead of arbitrary time windows  
+
     Returns:
     valid_theta_cycles: index of beginning and end of theta cycles
     """
 
     # Measure phase
     hilb = hilbert(filtered_lfp)
-    phase = np.angle(hilb, deg=True)
-    phase[phase < 0] = phase[phase < 0] + 360
     mag = np.abs(hilb)
 
     peaks,_ = find_peaks(-filtered_lfp, distance=eeg_sr / theta_band[1]) # Find peaks or troughs in the filtered_lfp
