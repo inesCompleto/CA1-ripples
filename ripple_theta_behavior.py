@@ -100,7 +100,30 @@ for trial in trial_files:
     mag_R = np.zeros(total_neurons)           # for theta phase-locking analysis
     mean_phase = np.zeros(total_neurons)      # for theta phase-locking analysis
     phase_lock_sign = np.zeros(total_neurons) # is theta phase-lock significant?
-    normalized_zscore = []                          # to store normalize zscored f.r. before,during and after ripp
+    normalized_zscore = []                    # to store normalize zscored f.r. before,during and after ripp
+
+    # Define phase bins for theta cycle analysis
+    n_phase_bins = 18  # 20-degree bins (360/18 = 20 degrees per bin)
+    phase_bin_edges = np.linspace(-np.pi, np.pi, n_phase_bins + 1) 
+    phase_bin_centers = (phase_bin_edges[:-1] + phase_bin_edges[1:]) / 2
+
+   # Storage for phase-binned firing rates
+    phase_binned_fr = np.zeros((total_neurons, n_phase_bins))  # mean firing rate for each neuron at each phase bin
+    
+    # Calculate time spent in each phase bin during RUN period (do this once for all neurons)
+    run_phases = phase_interpolator(np.arange(0, duration_trial, 1/eeg_sr))
+    run_phases = run_phases[~np.isnan(run_phases)]
+
+    if len(run_phases) > 0:
+        phase_time_counts, _ = np.histogram(run_phases, bins=phase_bin_edges)
+        # Convert counts to time (in seconds)
+        phase_time_spent = phase_time_counts / eeg_sr
+        
+        # Avoid division by zero
+        phase_time_spent[phase_time_spent == 0] = np.finfo(float).eps  # Use small number instead of inf
+    else:
+        phase_time_spent = np.ones(n_phase_bins) * np.finfo(float).eps
+
 
     for i in range(total_neurons):
         
@@ -167,9 +190,15 @@ for trial in trial_files:
  
         # ---- Phase-locking analysis during RUN ---- #
         # Get interpolated phase values at spike times
-        spike_phases = phase_interpolator(spk_times_run[i])       
-        
-        
+        spike_phases = phase_interpolator(spk_times_run[i])  
+ 
+        # ---- Compute phase-binned firing rates ---- #
+        # Bin the spike phases
+        phase_counts, _ = np.histogram(spike_phases, bins=phase_bin_edges)
+            
+        # Calculate firing rate for each phase bin (spikes/second)
+        phase_binned_fr[i, :] = phase_counts / phase_time_spent         
+           
         # Perform Rayleigh test
         R, mean_angle, _ = rd.rayleigh_test(spike_phases)
 
@@ -189,10 +218,10 @@ for trial in trial_files:
 
         # Significance threshold
         threshold = np.percentile(mag_R_shuffled, 95)  # 95% confidence
-        
+         
         if R>threshold:
             phase_lock_sign[i] = 1
-          
+           
     # Save results
     with h5py.File(file_path, 'a') as f:
         
@@ -202,6 +231,7 @@ for trial in trial_files:
             'theta_phase': mean_phase,
             'theta_frequency': theta_peak,
             'theta_lock_sign': phase_lock_sign,
+             'theta_fr': phase_binned_fr,
             'norm_Z_ripp': normalized_zscore,
             'ratio_Z_ripp_act': zscore_ratio
             }
