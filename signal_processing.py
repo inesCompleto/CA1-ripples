@@ -42,7 +42,7 @@ def norm_time(firing_rate, number_bins=10):
 
     # Step 2: Temporal binning
     bins = np.linspace(0, original_length, number_bins + 1, dtype=int)
-    binned = [np.mean(zscore[bins[i]:bins[i+1]]) for i in range(number_bins)]
+    binned = [np.mean(firing_rate[bins[i]:bins[i+1]]) for i in range(number_bins)]
     return np.array(binned)
 
 
