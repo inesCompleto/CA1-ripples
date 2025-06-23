@@ -13,6 +13,9 @@ import signal_processing as sp
 import rhythm_detection as rd
 from scipy import stats
 from scipy.interpolate import interp1d
+from sklearn.preprocessing import MinMaxScaler
+
+scaler = MinMaxScaler(feature_range=(0, 1)) # for fr normalization
 
 
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"       # directory where data files are stored
@@ -96,11 +99,11 @@ for trial in trial_files:
 #      and firing rate info during SLEEP for each neuron ---- #
 
     total_neurons = len(spk_times_sleep)
-    zscore_ratio = np.zeros(total_neurons)
+    ripp_diff = np.zeros(total_neurons)
     mag_R = np.zeros(total_neurons)           # for theta phase-locking analysis
     mean_phase = np.zeros(total_neurons)      # for theta phase-locking analysis
     phase_lock_sign = np.zeros(total_neurons) # is theta phase-lock significant?
-    normalized_zscore = []                    # to store normalize zscored f.r. before,during and after ripp
+    normalized_fr = []                    # to store normalize f.r. before,during and after ripp
 
     # Define phase bins for theta cycle analysis
     n_phase_bins = 18  # 20-degree bins (360/18 = 20 degrees per bin)
@@ -132,10 +135,10 @@ for trial in trial_files:
         
         # Compute firing rate of neuron i for the entire trial
         full_firing_rate, time_bins = sp.compute_fr(spk_times_sleep[i], t_range=[0, duration_sleep], bin_size=bin_fr)
-        full_zscore = stats.zscore(full_firing_rate)
-        
-        Z_ripp = [] # store firing rate during ripples
-        Z_nonripp = [] # store firing rate during non-ripple periods
+        norm_firing_rate = scaler.fit_transform(full_firing_rate.reshape(-1, 1)).flatten() # normalized firing rate
+
+        norm_fr_ripp = [] # store firing rate during ripples
+        norm_fr_nonripp = [] # store firing rate during non-ripple periods
         pre_ripp, ripp, post_ripp = [], [], [] # store normalized zscored f.r. before, during and after ripp
         
         for j, (start,end) in enumerate(ripp_events): 
@@ -163,30 +166,31 @@ for trial in trial_files:
                 continue 
             
             borders = np.array([start-lag, start, end, end+lag])/bin_fr
-            pre_ripp_zscore = full_zscore[int(borders[0]):int(borders[1])]
-            Z_nonripp.extend(pre_ripp_zscore) # too compute mean non ripp activity
-            norm_pre = sp.norm_zscore(pre_ripp_zscore, bin_zscore=bins_notRipp) # Normalized time
+            pre_ripp_fr = norm_firing_rate[int(borders[0]):int(borders[1])]
+            norm_fr_nonripp.extend(pre_ripp_fr) # too compute mean non ripp activity
+            norm_pre = sp.norm_time(pre_ripp_fr, number_bins=bins_notRipp) # Normalized time
             pre_ripp.append(norm_pre) # to compute av firing pattern before/during and after ripp
             
-            ripp_zscore = full_zscore[int(borders[1]):int(borders[2])]
-            Z_ripp.extend(ripp_zscore)
-            norm_ripp = sp.norm_zscore(ripp_zscore, bin_zscore=bins_ripp)
+            ripp_fr = norm_firing_rate[int(borders[1]):int(borders[2])]
+            norm_fr_ripp.extend(ripp_fr)
+            norm_ripp = sp.norm_time(ripp_fr, number_bins=bins_ripp)
             ripp.append(norm_ripp)
             
-            post_ripp_zscore = full_zscore[int(borders[2]):int(borders[3])]
-            Z_nonripp.extend(post_ripp_zscore)
-            norm_post = sp.norm_zscore(post_ripp_zscore, bin_zscore=bins_notRipp)
+            post_ripp_fr = norm_firing_rate[int(borders[2]):int(borders[3])]
+            norm_fr_nonripp.extend(post_ripp_fr)
+            norm_post = sp.norm_time(post_ripp_fr, number_bins=bins_notRipp)
             post_ripp.append(norm_post)
         
         pre_ripp_mean = np.mean(pre_ripp, axis=0)
         ripp_mean = np.mean(ripp, axis=0)   
         post_ripp_mean = np.mean(post_ripp, axis=0)
         all_fr = np.concatenate([pre_ripp_mean, ripp_mean, post_ripp_mean]) 
-        normalized_zscore.append(all_fr)
+        normalized_fr.append(all_fr)
         
-        mean_ripp_act = np.mean(Z_ripp)
-        mean_nonripp_act = np.mean(Z_nonripp)
-        zscore_ratio[i] = mean_ripp_act/mean_nonripp_act
+        mean_ripp_act = np.mean(norm_fr_ripp)
+        mean_nonripp_act = np.mean(norm_fr_nonripp)
+        
+        ripp_diff[i] = mean_ripp_act - mean_nonripp_act
  
         # ---- Phase-locking analysis during RUN ---- #
         # Get interpolated phase values at spike times
@@ -225,6 +229,9 @@ for trial in trial_files:
     # Save results
     with h5py.File(file_path, 'a') as f:
         
+        del f['norm_Z_ripp']
+        del f['ratio_Z_ripp_act']
+        
         # List of datasets to update
         datasets_to_update = {
             'mag_R': mag_R,
@@ -232,8 +239,8 @@ for trial in trial_files:
             'theta_frequency': theta_peak,
             'theta_lock_sign': phase_lock_sign,
              'theta_fr': phase_binned_fr,
-            'norm_Z_ripp': normalized_zscore,
-            'ratio_Z_ripp_act': zscore_ratio
+            'norm_fr_ripp': normalized_fr,
+            'diff_ripp_act': ripp_diff
             }
          
         # Remove existing datasets and create ones
