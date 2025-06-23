@@ -19,29 +19,30 @@ signal, or filtering a signal).
 import numpy as np
 from scipy.signal import butter, buttord, sosfiltfilt
 from scipy.ndimage import uniform_filter1d  # Used for RMS smoothing
+from scipy.interpolate import interp1d
 
-def norm_zscore(zscore, bin_zscore=10):
+def norm_time(firing_rate, number_bins=10):
     """
-    Normalize a zscore array using a fixed number of bins
+    Normalize a time series array using a fixed number of bins
 
     1) Check if interpolation is needed.
     2) Interpolate if the array is too short.
     3) Apply temporal binning afterward.
     """
-    original_length = len(zscore)
+    original_length = len(firing_rate)
 
     # Step 1: Interpolate if too few points
-    if original_length < bin_zscore:
-        # Interpolate to bin_zscore points
+    if original_length < number_bins:
+        # Interpolate to number_bins points
         original_time = np.linspace(0, 1, original_length)
-        target_time = np.linspace(0, 1, bin_zscore)
-        interp_func = interp1d(original_time, zscore, kind='linear', fill_value='extrapolate')
-        zscore_interp = interp_func(target_time)
-        return zscore_interp
+        target_time = np.linspace(0, 1, number_bins)
+        interp_func = interp1d(original_time, firing_rate, kind='linear', fill_value='extrapolate')
+        time_interp = interp_func(target_time)
+        return time_interp
 
     # Step 2: Temporal binning
-    bins = np.linspace(0, original_length, bin_zscore + 1, dtype=int)
-    binned = [np.mean(zscore[bins[i]:bins[i+1]]) for i in range(bin_zscore)]
+    bins = np.linspace(0, original_length, number_bins + 1, dtype=int)
+    binned = [np.mean(zscore[bins[i]:bins[i+1]]) for i in range(number_bins)]
     return np.array(binned)
 
 
