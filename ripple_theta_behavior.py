@@ -18,17 +18,80 @@ from sklearn.preprocessing import MinMaxScaler
 scaler = MinMaxScaler(feature_range=(0, 1)) # for fr normalization
 
 
+def ripp_diff(spk_times, duration_trial, ripp_events):
+    
+    bins_notRipp = 10
+    bins_ripp = 10
+    lag_default = 0.05
+    bin_fr = 0.005 # sec, for firing rate 
+    
+    full_firing_rate, time_bins = sp.compute_fr(spk_times[i], t_range=[0, duration_trial], bin_size=bin_fr)
+    norm_firing_rate = scaler.fit_transform(full_firing_rate.reshape(-1, 1)).flatten() # normalized firing rate
+
+    norm_fr_ripp = [] # store firing rate during ripples
+    norm_fr_nonripp = [] # store firing rate during non-ripple periods
+    pre_ripp, ripp, post_ripp = [], [], [] # store normalized zscored f.r. before, during and after ripp
+        
+    for j, (start,end) in enumerate(ripp_events): 
+        # Compute lag to consider for each ripple
+        current_ripple = ripp_events[j]
+        
+        if j==0:     
+            next_ripple = ripp_events[j+1]
+            distance_to_next= next_ripple[0] - current_ripple[1]
+            lag = min(lag_default, distance_to_next)
+    
+        elif j==total_ripples-1:
+            previous_ripple = ripp_events[j-1]
+            distance_to_previous = current_ripple[0] - previous_ripple[1]
+            lag = min(lag_default, distance_to_previous)
+
+        else:
+            next_ripple = ripp_events[j+1]
+            distance_to_next = next_ripple[0] - current_ripple[1]
+            previous_ripple = ripp_events[j-1]
+            distance_to_previous = current_ripple[0] - previous_ripple[1]
+            lag = min(lag_default, distance_to_previous, distance_to_next)
+
+        if lag<0.015 or start-lag<0:
+            continue 
+            
+        borders = np.array([start-lag, start, end, end+lag])/bin_fr
+        pre_ripp_fr = norm_firing_rate[int(borders[0]):int(borders[1])]
+        norm_fr_nonripp.extend(pre_ripp_fr) # too compute mean non ripp activity
+        norm_pre = sp.norm_time(pre_ripp_fr, number_bins=bins_notRipp) # Normalized time
+        pre_ripp.append(norm_pre) # to compute av firing pattern before/during and after ripp
+            
+        ripp_fr = norm_firing_rate[int(borders[1]):int(borders[2])]
+        norm_fr_ripp.extend(ripp_fr)
+        norm_ripp = sp.norm_time(ripp_fr, number_bins=bins_ripp)
+        ripp.append(norm_ripp)
+            
+        post_ripp_fr = norm_firing_rate[int(borders[2]):int(borders[3])]
+        norm_fr_nonripp.extend(post_ripp_fr)
+        norm_post = sp.norm_time(post_ripp_fr, number_bins=bins_notRipp)
+        post_ripp.append(norm_post)
+        
+    pre_ripp_mean = np.mean(pre_ripp, axis=0)
+    ripp_mean = np.mean(ripp, axis=0)   
+    post_ripp_mean = np.mean(post_ripp, axis=0)
+    all_fr = np.concatenate([pre_ripp_mean, ripp_mean, post_ripp_mean]) 
+    normalized_fr.append(all_fr)
+        
+    mean_ripp_act = np.mean(norm_fr_ripp)
+    mean_nonripp_act = np.mean(norm_fr_nonripp)
+        
+    return (mean_ripp_act - mean_nonripp_act)
+
+
+
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"       # directory where data files are stored
 trial_files = [f for f in os.listdir(pathway_win)] # Load name of all rat files
-
-bin_fr = 0.005 # sec, for firing rate                 
+                
 eeg_sr = 4800
 theta_range = (5,11)
 theta_bandwidth = 3 # Hz around peak
-lag_default = 0.05
 n_shuffles = 1000
-bins_notRipp = 10
-bins_ripp = 10
 
 for trial in trial_files:
     
@@ -44,7 +107,7 @@ for trial in trial_files:
         spk_times_sleep = f['spike_times']['postRun_sleep'][:]
         lfp_sleep = f['lfp']['postRun_sleep'][:]
         
-        duration_trial = len(lfp_run[0])/eeg_sr
+        duration_run = len(lfp_run[0])/eeg_sr
         duration_sleep = len(lfp_sleep[0])/eeg_sr
 
     # ---- Selected best channel for theta detection ---- #
@@ -99,7 +162,7 @@ for trial in trial_files:
 #      and firing rate info during SLEEP for each neuron ---- #
 
     total_neurons = len(spk_times_sleep)
-    ripp_diff = np.zeros(total_neurons)
+    observed_ripp_diff = np.zeros(total_neurons)
     mag_R = np.zeros(total_neurons)           # for theta phase-locking analysis
     mean_phase = np.zeros(total_neurons)      # for theta phase-locking analysis
     phase_lock_sign = np.zeros(total_neurons) # is theta phase-lock significant?
@@ -114,7 +177,7 @@ for trial in trial_files:
     phase_binned_fr = np.zeros((total_neurons, n_phase_bins))  # mean firing rate for each neuron at each phase bin
     
     # Calculate time spent in each phase bin during RUN period (do this once for all neurons)
-    run_phases = phase_interpolator(np.arange(0, duration_trial, 1/eeg_sr))
+    run_phases = phase_interpolator(np.arange(0, duration_run, 1/eeg_sr))
     run_phases = run_phases[~np.isnan(run_phases)]
 
     if len(run_phases) > 0:
@@ -126,7 +189,7 @@ for trial in trial_files:
         phase_time_spent[phase_time_spent == 0] = np.finfo(float).eps  # Use small number instead of inf
     else:
         phase_time_spent = np.ones(n_phase_bins) * np.finfo(float).eps
-
+  
 
     for i in range(total_neurons):
         
@@ -134,63 +197,18 @@ for trial in trial_files:
         total_ripples = len(ripp_events)
         
         # Compute firing rate of neuron i for the entire trial
-        full_firing_rate, time_bins = sp.compute_fr(spk_times_sleep[i], t_range=[0, duration_sleep], bin_size=bin_fr)
-        norm_firing_rate = scaler.fit_transform(full_firing_rate.reshape(-1, 1)).flatten() # normalized firing rate
-
-        norm_fr_ripp = [] # store firing rate during ripples
-        norm_fr_nonripp = [] # store firing rate during non-ripple periods
-        pre_ripp, ripp, post_ripp = [], [], [] # store normalized zscored f.r. before, during and after ripp
+        observed_ripp_diff[i] = ripp_diff(spk_times_sleep, duration_sleep, ripp_events)
         
-        for j, (start,end) in enumerate(ripp_events): 
-            # Compute lag to consider for each ripple
-            current_ripple = ripp_events[j]
-        
-            if j==0:     
-                next_ripple = ripp_events[j+1]
-                distance_to_next= next_ripple[0] - current_ripple[1]
-                lag = min(lag_default, distance_to_next)
-    
-            elif j==total_ripples-1:
-                previous_ripple = ripp_events[j-1]
-                distance_to_previous = current_ripple[0] - previous_ripple[1]
-                lag = min(lag_default, distance_to_previous)
-
-            else:
-                next_ripple = ripp_events[j+1]
-                distance_to_next = next_ripple[0] - current_ripple[1]
-                previous_ripple = ripp_events[j-1]
-                distance_to_previous = current_ripple[0] - previous_ripple[1]
-                lag = min(lag_default, distance_to_previous, distance_to_next)
-
-            if lag<0.015 or start-lag<0:
-                continue 
+#        for _ in range(n_shuffles):
+#            shift = np.random.uniform(0, duration_sleep )
+#            shifted_times = (spk_times_sleep[i] + shift) % duration_sleep
+#            shuffled_diff.append(ripp_diff())
             
-            borders = np.array([start-lag, start, end, end+lag])/bin_fr
-            pre_ripp_fr = norm_firing_rate[int(borders[0]):int(borders[1])]
-            norm_fr_nonripp.extend(pre_ripp_fr) # too compute mean non ripp activity
-            norm_pre = sp.norm_time(pre_ripp_fr, number_bins=bins_notRipp) # Normalized time
-            pre_ripp.append(norm_pre) # to compute av firing pattern before/during and after ripp
-            
-            ripp_fr = norm_firing_rate[int(borders[1]):int(borders[2])]
-            norm_fr_ripp.extend(ripp_fr)
-            norm_ripp = sp.norm_time(ripp_fr, number_bins=bins_ripp)
-            ripp.append(norm_ripp)
-            
-            post_ripp_fr = norm_firing_rate[int(borders[2]):int(borders[3])]
-            norm_fr_nonripp.extend(post_ripp_fr)
-            norm_post = sp.norm_time(post_ripp_fr, number_bins=bins_notRipp)
-            post_ripp.append(norm_post)
+#        shuffled_diff = np.array(shuffled_diff)
+
+        # Significance threshold
+#        threshold = np.percentile(shuffled_diff, 95)  # 95% confidence
         
-        pre_ripp_mean = np.mean(pre_ripp, axis=0)
-        ripp_mean = np.mean(ripp, axis=0)   
-        post_ripp_mean = np.mean(post_ripp, axis=0)
-        all_fr = np.concatenate([pre_ripp_mean, ripp_mean, post_ripp_mean]) 
-        normalized_fr.append(all_fr)
-        
-        mean_ripp_act = np.mean(norm_fr_ripp)
-        mean_nonripp_act = np.mean(norm_fr_nonripp)
-        
-        ripp_diff[i] = mean_ripp_act - mean_nonripp_act
  
         # ---- Phase-locking analysis during RUN ---- #
         # Get interpolated phase values at spike times
@@ -209,11 +227,11 @@ for trial in trial_files:
         mag_R[i] = R
         mean_phase[i] = mean_angle
         
-        # Shuffle (permutation) test
+        # Theta shuffle test
         mag_R_shuffled = []
         for _ in range(n_shuffles):
-            shift = np.random.uniform(0, duration_trial)
-            shifted_times = (spk_times_run[i] + shift) % duration_trial
+            shift = np.random.uniform(0, duration_run)
+            shifted_times = (spk_times_run[i] + shift) % duration_run
             shuffled_phases = phase_interpolator(shifted_times)
             shuffled_R, *_ = rd.rayleigh_test(shuffled_phases)         
             mag_R_shuffled.append(shuffled_R)
@@ -229,9 +247,6 @@ for trial in trial_files:
     # Save results
     with h5py.File(file_path, 'a') as f:
         
-        del f['norm_Z_ripp']
-        del f['ratio_Z_ripp_act']
-        
         # List of datasets to update
         datasets_to_update = {
             'mag_R': mag_R,
@@ -240,7 +255,7 @@ for trial in trial_files:
             'theta_lock_sign': phase_lock_sign,
              'theta_fr': phase_binned_fr,
             'norm_fr_ripp': normalized_fr,
-            'diff_ripp_act': ripp_diff
+            'diff_ripp_act': observed_ripp_diff
             }
          
         # Remove existing datasets and create ones
