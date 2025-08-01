@@ -64,10 +64,10 @@ for trial in trial_files:
         best_channel_data = filtered_data[best_channel_idx]
         best_channel_rms = rms_power_envelopes[best_channel_idx]
         
-        if 'best_lfp_channel' in f:
-            del f['best_lfp_channel']
+        if 'SWR_lfp_ch' in f:
+            del f['SWR_lfp_ch']
         
-        f.create_dataset('best_lfp_channel_ripp', data=best_channel_idx)
+        f.create_dataset('SWR_lfp_ch', data=best_channel_idx)
 
         # 3) Detect ripple events on selected channel
         # 3.1 Find ripple events
