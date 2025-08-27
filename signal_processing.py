@@ -15,11 +15,248 @@ signal, or filtering a signal).
 
 """
 
-
 import numpy as np
 from scipy.signal import butter, buttord, sosfiltfilt
 from scipy.ndimage import uniform_filter1d  # Used for RMS smoothing
 from scipy.interpolate import interp1d
+from scipy.signal import welch, hilbert
+
+
+
+def rayleigh_test(phases):
+    """
+    Calculate the normalized Rayleigh vector for a set of phase angles (in rad)
+    Formula: R = sqrt((1/n) * (sum(sin(phases))**2 + sum(cos(phases))**2))
+
+    Params:
+    phases (numpy array): phase angles in rad
+
+    Returns:
+    R (float): normalized Rayleigh vector magnitude
+    mean_angle (float): mean phase angle
+    p_value (float): p-value for Rayleigh test
+    """
+    
+    # Remove NaN values
+    phases = phases[~np.isnan(phases)]
+    n = len(phases)
+    
+    # Handle edge case: no valid phases
+    if n == 0:
+        return np.nan, np.nan, np.nan
+    
+    # Handle edge case: only one phase value
+    if n == 1:
+        return 1.0, phases[0], 0.0  # Perfect phase locking with 1 spike
+    
+    sum_sin = np.sum(np.sin(phases))  # No need for nansum since we removed NaNs
+    sum_cos = np.sum(np.cos(phases))
+
+    R = np.sqrt(sum_sin**2 + sum_cos**2) / n
+    mean_angle = (np.arctan2(sum_sin, sum_cos) + 2 * np.pi) % (2 * np.pi)
+    Z = n * R**2  # Rayleigh's Z statistics
+    p_value = np.exp(-Z)  # approximation for large n
+
+    return R, mean_angle, p_value
+
+
+def shuffle_test(spk_times, trial_duration, phase_interpolator, sampling_rate, n_shuffles=500):
+    
+        theta_R_shuffled = []
+        for _ in range(n_shuffles):
+            shift = np.random.uniform(0, trial_duration)
+            shifted_times = (spk_times + shift) % trial_duration 
+            shuffled_phases = get_spike_phase(phase_interpolator, shifted_times, sampling_rate)
+            shuffled_R, *_ = rayleigh_test(shuffled_phases)         
+            theta_R_shuffled.append(shuffled_R)
+        theta_R_shuffled = np.array(theta_R_shuffled)
+        
+        return theta_R_shuffled
+
+
+
+
+def get_signal_phase(
+    lfp: np.ndarray,
+    sampling_rate: float,
+    clip_value: float = 0,
+    power_thresh: float = 5,
+    cycle_start: str = "peak",
+    bandpass_range: tuple = [float, float],
+) -> tuple[np.ndarray, np.ndarray]:
+
+    if cycle_start not in ["peak", "trough"]:
+        raise ValueError("cycle_start must be either 'peak' or 'trough'")
+
+    n_samples = lfp.shape[0]
+
+    # Direct bandpass mode
+    low_freq, high_freq = bandpass_range
+
+    # Pre-allocate output arrays
+    signal_phase_out = np.zeros(n_samples)
+    cycle_numbers_out = np.zeros(n_samples, dtype=float)
+    
+    
+    # Filter LFP signal in theta range
+    filtered_lfp = bandpass_filter(lfp,          
+                                   low_freq, 
+                                   high_freq,
+                                   sampling_rate)        
+
+    # Hilbert transform
+    analytic_signal = hilbert(filtered_lfp)
+
+    # Extract phase
+    signal_phase = np.angle(analytic_signal) % (2 * np.pi)
+
+    # Identify phase transitions efficiently
+    phase_diff = np.diff(signal_phase)
+    phase_transitions = np.zeros(n_samples, dtype=bool)
+
+    # Set transition point based on cycle_start parameter
+    if cycle_start == "peak":
+        phase_transitions[1:] = phase_diff < -np.pi
+    else:  # cycle_start == "trough"
+        phase_transitions[1:] = np.abs(phase_diff) > np.pi
+
+    # Get cycle numbers efficiently
+    cycle_numbers = np.cumsum(phase_transitions)
+
+    # Calculate cycle statistics in one pass
+    max_cycle = cycle_numbers[-1] + 1
+    bincount_cycles = np.bincount(cycle_numbers, minlength=max_cycle)
+
+    # Power calculation
+    power = filtered_lfp**2
+    power_per_cycle = np.bincount(cycle_numbers, weights=power, minlength=max_cycle)
+
+    # Avoid division by zero
+    mask = bincount_cycles > 0
+    power_per_cycle[mask] /= bincount_cycles[mask]
+
+    # Identify bad cycles - these are separate O(n) operations
+    bad_cycles_set = set()
+
+    # 1. Clipped cycles
+    if clip_value > 0:
+        clipped_indices = np.where(np.abs(lfp) > clip_value)[0]
+        if len(clipped_indices) > 0:
+            clipped_cycles = np.unique(cycle_numbers[clipped_indices])
+            clipped_cycles = clipped_cycles[clipped_cycles < max_cycle]
+            bad_cycles_set.update(clipped_cycles.astype(int))
+
+    # 2. Bad power cycles
+    power_threshold = np.nanpercentile(power_per_cycle, power_thresh)
+    bad_power_cycles = np.where(power_per_cycle < power_threshold)[0]
+    bad_power_cycles = bad_power_cycles[bad_power_cycles < max_cycle]
+    bad_cycles_set.update(bad_power_cycles.astype(int))
+
+    # 3. Bad length cycles
+    cycle_length_lim = np.ceil(
+            1 / np.array([high_freq, low_freq]) * sampling_rate
+        ).astype(int)
+    bad_length_mask = (bincount_cycles < cycle_length_lim[0]) | (
+            bincount_cycles > cycle_length_lim[1]
+        )
+    bad_length_cycles = np.where(bad_length_mask)[0]
+    bad_length_cycles = bad_length_cycles[bad_length_cycles < max_cycle]
+    bad_cycles_set.update(bad_length_cycles.astype(int))
+
+    # Create mask for bad samples efficiently
+    is_bad_cycle = np.zeros(max_cycle, dtype=bool)
+    if bad_cycles_set:
+        bad_cycles_array = np.array(list(bad_cycles_set), dtype=int)
+        is_bad_cycle[bad_cycles_array] = True
+    bad_sample_mask = is_bad_cycle[cycle_numbers]
+
+    # Create output arrays for this channel
+    channel_phase = signal_phase.copy()
+    channel_phase[bad_sample_mask] = np.nan
+    signal_phase_out[:] = channel_phase
+
+    channel_cycles = cycle_numbers.astype(float)
+    channel_cycles[bad_sample_mask] = np.nan
+    cycle_numbers_out[:] = channel_cycles
+
+    # Return with proper dimensionality
+    return signal_phase_out, cycle_numbers_out
+
+
+def get_spike_phase(
+    phase: np.ndarray,
+    spike_times: np.ndarray,
+    sampling_rate: float
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate the signal phase of spikes based on the LFP.
+    """
+    
+    # Convert spike times to indices
+    spike_indices = np.floor(spike_times * sampling_rate).astype(np.int64)
+
+    # Create output arrays with NaNs
+    spike_phases = np.full_like(spike_times, np.nan, dtype=float)
+
+    # Find valid indices
+    valid_mask = (spike_indices >= 0) & (spike_indices < len(phase))
+
+    # Extract phases and frequencies for valid spikes
+    if np.any(valid_mask):
+        valid_indices = spike_indices[valid_mask]
+        spike_phases[valid_mask] = phase[valid_indices]
+
+    return spike_phases
+
+
+
+
+def choose_lfp_ch(lfp, eeg_sr, freq_range):
+    """
+    Chooses best lfp channel for analysis of given rhythm.
+
+    Returns
+    -------
+    best_ch_idx : TYPE
+        DESCRIPTION.
+
+    """
+    
+    
+    n_channels = len(lfp) # number of LFP channels
+
+    SNR = np.zeros(n_channels) # to store signal-to-noise ratio for each channel
+
+    for ch in range(n_channels):
+        channel = lfp[ch]
+            
+        # Compute power spectral density (PSD)
+        freqs, psd = welch(channel, fs=eeg_sr, nperseg=int(eeg_sr), scaling='density')
+
+        # Identify the peak frequency in the theta range (5-11 Hz)
+        band_mask = (freqs >= freq_range[0]) & (freqs <= freq_range[1])
+        if not np.any(band_mask):
+            SNR[ch] = 0.0
+            continue
+            
+        rhythm_freqs = freqs[band_mask]
+        rhythm_psd = psd[band_mask]
+        peak_idx = np.argmax(rhythm_psd)
+        peak_freq = rhythm_freqs[peak_idx]
+
+        # Compute SNR as the mean power in peak band ±0.5 Hz / total power
+        peak_band_mask = (freqs >= (peak_freq - 0.5)) & (freqs <= (peak_freq + 0.5))
+        peak_band_power = np.mean(psd[peak_band_mask])
+        total_power = np.sum(psd)
+     
+        SNR[ch] = peak_band_power / total_power if total_power > 0 else np.nan
+
+    # Select best channel
+    best_ch_idx = np.argmax(SNR)
+    
+    return best_ch_idx
+
+
 
 def norm_time(firing_rate, number_bins=10):
     """
@@ -44,6 +281,7 @@ def norm_time(firing_rate, number_bins=10):
     bins = np.linspace(0, original_length, number_bins + 1, dtype=int)
     binned = [np.mean(firing_rate[bins[i]:bins[i+1]]) for i in range(number_bins)]
     return np.array(binned)
+
 
 
 def bandpass_filter(data, f_low, f_high, fs, fallback_order=3):

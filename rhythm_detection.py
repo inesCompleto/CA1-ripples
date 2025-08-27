@@ -17,35 +17,12 @@
 import numpy as np
 from scipy.signal import welch, hilbert, find_peaks
 from scipy.signal import butter, buttord, filtfilt
+import signal_processing as sp
 
 # Suppress MNE and joblib (verbose=False) logs
 import mne
 mne.set_log_level("ERROR")
 
-def rayleigh_test(phases):
-    """
-    Calculate the normalized Rayleigh vector for a set of phase angles (in rad)
-    Formula: R = sqrt((1/n) * (sum(sin(phases))**2 + sum(cos(phases))**2))
-
-    Params:
-    phases (numpy array): phase angles in rad
-
-    Returns:
-    R (int): normalized Rayleigh vector magnitude
-    mean_angle: 
-    p_value: 
-    """
-
-    n = len(phases)
-    sum_sin = np.nansum(np.sin(phases))
-    sum_cos = np.nansum(np.cos(phases))
-
-    R = np.sqrt(sum_sin**2 + sum_cos**2)/n
-    mean_angle = np.arctan2(sum_sin, sum_cos)
-    Z = n*R**2 # Rayleigh's Z statistics
-    p_value = np.exp(-Z) # approzimation for large n
-
-    return R, mean_angle, p_value
 
 def detect_theta(filtered_lfp, eeg_sr, theta_band = (5,11)):
     """
@@ -125,6 +102,67 @@ def detect_ripples(power_env, min_dur, max_dur, eeg_sr):
     return ripp_indices
 
     
+def ripp_modulation(norm_firing_rate, ripp_events, bin_fr=0.005, bins_notRipp=10, bins_ripp=10, lag_default=0.05):
+
+    total_ripples = len(ripp_events)
+    
+    norm_fr_ripp = [] # store firing rate during ripples
+    norm_fr_nonripp = [] # store firing rate during non-ripple periods
+    pre_ripp, ripp, post_ripp = [], [], [] # store normalized zscored f.r. before, during and after ripp
+        
+    for j, (start,end) in enumerate(ripp_events): 
+        # 1. Compute lag to consider for each ripple
+        current_ripple = ripp_events[j]
+        
+        if j==0:     
+            next_ripple = ripp_events[j+1]
+            distance_to_next= next_ripple[0] - current_ripple[1]
+            lag = min(lag_default, distance_to_next)
+    
+        elif j==total_ripples-1:
+            previous_ripple = ripp_events[j-1]
+            distance_to_previous = current_ripple[0] - previous_ripple[1]
+            lag = min(lag_default, distance_to_previous)
+
+        else:
+            next_ripple = ripp_events[j+1]
+            distance_to_next = next_ripple[0] - current_ripple[1]
+            previous_ripple = ripp_events[j-1]
+            distance_to_previous = current_ripple[0] - previous_ripple[1]
+            lag = min(lag_default, distance_to_previous, distance_to_next)
+
+        if lag<0.015 or start-lag<0:
+            continue 
+            
+        borders = np.array([start-lag, start, end, end+lag])/bin_fr
+        
+        
+        pre_ripp_fr = norm_firing_rate[int(borders[0]):int(borders[1])]
+        norm_fr_nonripp.extend(pre_ripp_fr) # to compute mean non ripp activity
+        norm_pre = sp.norm_time(pre_ripp_fr, number_bins=bins_notRipp) # Normalized time
+        pre_ripp.append(norm_pre) # to compute av firing pattern before/during and after ripp
+            
+        ripp_fr = norm_firing_rate[int(borders[1]):int(borders[2])]
+        norm_fr_ripp.extend(ripp_fr)
+        norm_ripp = sp.norm_time(ripp_fr, number_bins=bins_ripp)
+        ripp.append(norm_ripp)
+            
+        post_ripp_fr = norm_firing_rate[int(borders[2]):int(borders[3])]
+        norm_fr_nonripp.extend(post_ripp_fr)
+        norm_post = sp.norm_time(post_ripp_fr, number_bins=bins_notRipp)
+        post_ripp.append(norm_post)
+        
+    pre_ripp_mean = np.mean(pre_ripp, axis=0)
+    ripp_mean = np.mean(ripp, axis=0)   
+    post_ripp_mean = np.mean(post_ripp, axis=0)
+    all_fr = np.concatenate([pre_ripp_mean, ripp_mean, post_ripp_mean]) 
+        
+    mean_ripp_act = np.mean(norm_fr_ripp)
+    mean_nonripp_act = np.mean(norm_fr_nonripp)
+    ripp_modulation = mean_ripp_act - mean_nonripp_act
+        
+    return all_fr, ripp_modulation
+
 
 def detect_brain_states(
         speed, pos_sr,
