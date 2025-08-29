@@ -16,10 +16,9 @@ signal, or filtering a signal).
 """
 
 import numpy as np
-from scipy.signal import butter, buttord, sosfiltfilt
 from scipy.ndimage import uniform_filter1d  # Used for RMS smoothing
 from scipy.interpolate import interp1d
-from scipy.signal import welch, hilbert
+from scipy.signal import welch, hilbert,  firwin, filtfilt
 
 
 
@@ -53,7 +52,7 @@ def rayleigh_test(phases):
     sum_cos = np.sum(np.cos(phases))
 
     R = np.sqrt(sum_sin**2 + sum_cos**2) / n
-    mean_angle = (np.arctan2(sum_sin, sum_cos) + 2 * np.pi) % (2 * np.pi)
+    mean_angle = (np.arctan2(sum_sin, sum_cos))
     Z = n * R**2  # Rayleigh's Z statistics
     p_value = np.exp(-Z)  # approximation for large n
 
@@ -108,7 +107,7 @@ def get_signal_phase(
     analytic_signal = hilbert(filtered_lfp)
 
     # Extract phase
-    signal_phase = np.angle(analytic_signal) % (2 * np.pi)
+    signal_phase = np.angle(analytic_signal)
 
     # Identify phase transitions efficiently
     phase_diff = np.diff(signal_phase)
@@ -284,7 +283,39 @@ def norm_time(firing_rate, number_bins=10):
 
 
 
-def bandpass_filter(data, f_low, f_high, fs, fallback_order=3):
+
+
+def bandpass_filter(data, f_low, f_high, fs):
+
+    # Optimize filter design
+    filter_order = min(int(fs / 2), 1001)
+    if filter_order % 2 == 0:
+        filter_order += 1  # Ensure odd order for zero phase filtering
+
+    # Design bandpass filter for this channel
+    filter_taps = firwin(
+            filter_order,
+            [f_low, f_high],
+            pass_zero=False,
+            window="blackman",
+            fs=fs,
+        )
+
+    n_samples = data.shape[0]
+    # Calculate appropriate padding for filtfilt
+    pad_length = min(3 * (len(filter_taps) - 1), n_samples - 1, 1000)
+
+    # Filter LFP for this channel
+    filtered_lfp = filtfilt(filter_taps, 1, data, padlen=pad_length)
+    
+    return filtered_lfp
+
+
+
+
+
+
+def bandpass_filter_mine(data, f_low, f_high, fs, fallback_order=3):
     """
     Robust bandpass Butterworth filter with automatic gpass/gstop selection and fallback.
 
