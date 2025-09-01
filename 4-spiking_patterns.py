@@ -95,7 +95,7 @@ for trial in trial_files:
                 lfp=selected_theta_lfp,
                 sampling_rate=eeg_sr,
                 power_thresh=5,
-                cycle_start="peak",
+                cycle_start="trough",
                 bandpass_range = (theta_low, theta_high)
                 )
         
@@ -106,7 +106,7 @@ for trial in trial_files:
                 lfp=selected_ripp_lfp,
                 sampling_rate=eeg_sr,
                 power_thresh=5,
-                cycle_start="peak",
+                cycle_start="trough",
                 bandpass_range = (SWR_range[0], SWR_range[1])
                 )             
         
@@ -117,7 +117,7 @@ for trial in trial_files:
                 phase = phase_theta,        
                 spike_times=spk_times_run[i],
                 sampling_rate=eeg_sr,
-                ) # 0-2pi
+                ) # -pi,pi
             
             # 4. Compute preferred spiking phase
             # 4.1 Rayleigh test
@@ -160,7 +160,7 @@ for trial in trial_files:
                 phase = phase_ripp,        
                 spike_times=spikes_during_ripples,
                 sampling_rate=eeg_sr,
-                ) # 0-2pi
+                ) # -pi,pi
             
             # 8.2 Rayleigh test
             ripp_R[i], mean_ripp_phase[i], _ = sp.rayleigh_test(spike_ripp)   
@@ -173,7 +173,7 @@ for trial in trial_files:
         datasets_to_update = {
             'theta_R': theta_R,
             'theta_phase': mean_theta_phase,
-            'theta_lock_phase': theta_lock_sign,
+            'theta_lock_sign': theta_lock_sign,
             'ripp_modulation': ripp_modulation,
             'ripp_R': ripp_R,
             'ripp_phase': mean_ripp_phase,
