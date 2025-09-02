@@ -73,10 +73,8 @@ for trial in trial_files:
         
         # Theta phase analysis
         # 1. Select lfp ch for theta phase analysis
-        all_tetrodes = f['tetrode_id'][:]  # index of tetrode in lfp ch
-        selected_theta_tetrode = f['theta_lfp_tetrode'][()]        
-        lfp_idx = np.where(all_tetrodes == selected_theta_tetrode)[0][0] # which lfp ch to use? 1st one from this tetrode
-        selected_theta_lfp = f['lfp']['run'][lfp_idx]
+        theta_lfp_idx = f['theta_lfp_ch'][()]
+        selected_theta_lfp = f['lfp']['run'][theta_lfp_idx]
         
         # 2. Extract theta phase during RUN trial
         # 2.1 Redefine theta range around peak
