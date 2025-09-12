@@ -12,8 +12,8 @@ During sleep trials
 import numpy as np
 import os
 import h5py
-import signal_processing as sp
-import rhythm_detection as rd
+import helper_functions.signal_processing as sp
+import helper_functions.rhythm_detection as rd
 
 
 pathway_win = r"D:\data_CA1\hdf5_NoHighGain"                   # directory where data files are stored

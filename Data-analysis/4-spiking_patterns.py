@@ -25,8 +25,8 @@ import os
 import h5py 
 from scipy.signal import welch
 import numpy as np
-import signal_processing as sp
-import rhythm_detection as rd
+import helper_functions.signal_processing as sp
+import helper_functions.rhythm_detection as rd
 from sklearn.preprocessing import MinMaxScaler
 
 scaler = MinMaxScaler(feature_range=(0, 1)) # for fr normalization
