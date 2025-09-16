@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 class Neuron:
     """ Defines a population of Izhikevich neurons"""
@@ -57,15 +58,31 @@ class Neuron:
         self.initialize_state(len(t))
         
         for i in range(len(t)-1):
-            # Update voltage and recovery variable for all neurons
-            self.V[:, i+1] = self.V[:, i] + dt * np.array([
-    self.dvdt_individual(self.V[j, i], self.u[j, i], I_ext, I_syn[j], self.eta[j])
-    for j in range(self.N)
-])
+            dvdt, dudt = self.neuron_dynamics(self.V[:,i], self.u[:,i], I_ext)
+            # Update voltage and recovery variable for all neurons      
+            self.V[:, i+1] = self.V[:, i] + dt * dvdt
+            self.u[:, i+1] = self.u[:, i] + dt * dudt
+        
+            # Spike detection
+            for j in range(self.N):
+                if self.V[j,i+1] > self.params['V_peak']:
+                    self.V[j,i+1] = self.params['V_reset']
+                    self.u[j,i+1] = self.u[j,i+1] + self.params['ujump']   
+    
+        return self.V, self.u
 
-self.u[:, i+1] = self.u[:, i] + dt * np.array([
-    self.dudt(self.V[j, i], self.u[j, i]) for j in range(self.N)
-])
-        
-        
+
+    def plot_results(self, t, title='Neuron Population'):
+        """Plot firing rate comparison"""
+        fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+        ax.plot(t, self.V[0,:], color='#a6bddb', label='Full network')
+        ax.set_ylabel('Membrane potential', fontsize=22)
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.tick_params(axis='both', labelsize=16)
+        ax.set_xlabel('time (msec)', fontsize=22)
+        ax.set_title(title, fontsize=22)
+        ax.legend(fontsize=18)
+        fig.tight_layout()
+        return fig, ax
         
