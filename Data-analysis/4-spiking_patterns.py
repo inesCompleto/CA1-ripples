@@ -48,11 +48,10 @@ phase_group2 = []
 phase_group3 = []
 phase_group4 = []
 
-for trial in trial_files:  
+for trial in trial_files[13:15]:  
     print(trial)
     file_path = os.path.join(pathway_win, trial)
    
-
     with h5py.File(file_path,'r') as f:
         cell_tetrode = f['cell_id']
         spk_times_run = f['spike_times']['run'][:]
@@ -70,6 +69,7 @@ for trial in trial_files:
         ripp_modulation = np.zeros(total_neurons)
         ripp_R = np.zeros(total_neurons)
         mean_ripp_phase = np.zeros(total_neurons)
+        ripp_mod_sign = np.zeros(total_neurons)
         
         # Theta phase analysis
         # 1. Select lfp ch for theta phase analysis
@@ -89,7 +89,7 @@ for trial in trial_files:
         theta_high = theta_peak_freq + filt_half_bandwidth
              
         # 2.2 Create function that estimates theta phase
-        phase_theta, _ = sp.get_signal_phase(
+        phase_theta, _,_ = sp.get_signal_phase(
                 lfp=selected_theta_lfp,
                 sampling_rate=eeg_sr,
                 power_thresh=5,
@@ -100,7 +100,7 @@ for trial in trial_files:
         # Create function that estimates ripp phase
         selected_ripp_idx = f['SWR_lfp_ch'][()]
         selected_ripp_lfp = f['lfp']['postRun_sleep'][selected_ripp_idx]
-        phase_ripp, _ = sp.get_signal_phase(
+        phase_ripp, _,_ = sp.get_signal_phase(
                 lfp=selected_ripp_lfp,
                 sampling_rate=eeg_sr,
                 power_thresh=5,
@@ -143,8 +143,23 @@ for trial in trial_files:
             # 6. Load idx of SWR events
             ripp_events = f['ripp_times']['postRun_sleep'][:]
             
-            # 7. Compute ripple modulation as difference between ripple and non-ripple mean activity
+            # 7. Ripple modulation
+            # 7.1 Compute ripple modulation as difference between ripple and non-ripple mean activity
             _, ripp_modulation[i] = rd.ripp_modulation(norm_firing_rate, ripp_events)
+            
+            # 7.2 Ripple modulation shuffle test
+            ripp_mod_shuffled = []
+            for _ in range(500):
+                shift = np.random.uniform(0, duration_sleep)
+                shifted_times = (spk_times_sleep[i] + shift) % duration_sleep 
+                shuffled_fr,_ = sp.compute_fr(shifted_times, t_range=[0, duration_sleep], bin_size=bin_fr)
+                norm_shuffled_fr = scaler.fit_transform(shuffled_fr.reshape(-1, 1)).flatten()
+                _,shuffled_ripp_modulation = rd.ripp_modulation(norm_shuffled_fr, ripp_events)
+                ripp_mod_shuffled.append(shuffled_ripp_modulation)
+            ripp_mod_shuffled = np.array(ripp_mod_shuffled)
+            threshold = np.percentile(np.abs(ripp_mod_shuffled), 95)  # significance threshold
+            ripp_mod_sign[i] = 1 if np.abs(ripp_modulation[i])>threshold else ripp_mod_sign[i] # set lock sign to one if R significant
+            
             
             # 8. Computed preferred spike phase
             # 8.1 Mask spikes outside ripples
@@ -173,6 +188,7 @@ for trial in trial_files:
             'theta_phase': mean_theta_phase,
             'theta_lock_sign': theta_lock_sign,
             'ripp_modulation': ripp_modulation,
+            'ripp_modulation_sign': ripp_mod_sign,
             'ripp_R': ripp_R,
             'ripp_phase': mean_ripp_phase,
             }
