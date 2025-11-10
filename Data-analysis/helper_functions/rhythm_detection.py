@@ -17,7 +17,7 @@
 import numpy as np
 from scipy.signal import welch, hilbert, find_peaks
 from scipy.signal import butter, buttord, filtfilt
-import signal_processing as sp
+import helper_functions.signal_processing as sp
 
 # Suppress MNE and joblib (verbose=False) logs
 import mne
