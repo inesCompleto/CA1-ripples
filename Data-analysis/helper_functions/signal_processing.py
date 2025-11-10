@@ -81,27 +81,53 @@ def get_signal_phase(
     clip_value: float = 0,
     power_thresh: float = 5,
     cycle_start: str = "peak",
-    bandpass_range: tuple = [float, float],
-) -> tuple[np.ndarray, np.ndarray]:
+    bandpass_range: tuple = (4.0, 12.0),
+) -> tuple[np.ndarray, np.ndarray, list[tuple[int, int, int]]]:
+    """
+    Compute theta phase, cycle numbers, and cycle boundaries.
+
+    Parameters
+    ----------
+    lfp : np.ndarray
+        Input LFP signal (1D).
+    sampling_rate : float
+        Sampling rate in Hz.
+    clip_value : float, optional
+        If >0, cycles with clipped values beyond this threshold are discarded.
+    power_thresh : float, optional
+        Percentile threshold for rejecting low-power cycles.
+    cycle_start : str, optional
+        Whether to define cycle boundaries at "peak" or "trough".
+    bandpass_range : tuple, optional
+        Bandpass filter frequency range (low, high).
+
+    Returns
+    -------
+    signal_phase_out : np.ndarray
+        Instantaneous theta phase, NaN for bad cycles.
+    cycle_numbers_out : np.ndarray
+        Cycle ID per sample, NaN for bad cycles.
+    cycle_boundaries : list of tuples
+        List of (cycle_number, start_index, end_index) for valid cycles.
+    """
 
     if cycle_start not in ["peak", "trough"]:
         raise ValueError("cycle_start must be either 'peak' or 'trough'")
 
     n_samples = lfp.shape[0]
-
-    # Direct bandpass mode
     low_freq, high_freq = bandpass_range
 
-    # Pre-allocate output arrays
+    # Pre-allocate outputs
     signal_phase_out = np.zeros(n_samples)
     cycle_numbers_out = np.zeros(n_samples, dtype=float)
-    
-    
+
     # Filter LFP signal in theta range
-    filtered_lfp = bandpass_filter(lfp,          
-                                   low_freq, 
-                                   high_freq,
-                                   sampling_rate)        
+    filtered_lfp = bandpass_filter(
+        lfp,
+        low_freq,
+        high_freq,
+        sampling_rate
+    )
 
     # Hilbert transform
     analytic_signal = hilbert(filtered_lfp)
@@ -109,32 +135,31 @@ def get_signal_phase(
     # Extract phase
     signal_phase = np.angle(analytic_signal)
 
-    # Identify phase transitions efficiently
+    # Identify phase transitions
     phase_diff = np.diff(signal_phase)
     phase_transitions = np.zeros(n_samples, dtype=bool)
 
-    # Set transition point based on cycle_start parameter
     if cycle_start == "peak":
         phase_transitions[1:] = phase_diff < -np.pi
-    else:  # cycle_start == "trough"
+    else:  # "trough"
         phase_transitions[1:] = np.abs(phase_diff) > np.pi
 
-    # Get cycle numbers efficiently
+    # Assign cycle numbers
     cycle_numbers = np.cumsum(phase_transitions)
 
-    # Calculate cycle statistics in one pass
+    # Stats
     max_cycle = cycle_numbers[-1] + 1
     bincount_cycles = np.bincount(cycle_numbers, minlength=max_cycle)
 
-    # Power calculation
+    # Power per cycle
     power = filtered_lfp**2
-    power_per_cycle = np.bincount(cycle_numbers, weights=power, minlength=max_cycle)
-
-    # Avoid division by zero
+    power_per_cycle = np.bincount(
+        cycle_numbers, weights=power, minlength=max_cycle
+    )
     mask = bincount_cycles > 0
     power_per_cycle[mask] /= bincount_cycles[mask]
 
-    # Identify bad cycles - these are separate O(n) operations
+    # Identify bad cycles
     bad_cycles_set = set()
 
     # 1. Clipped cycles
@@ -142,34 +167,30 @@ def get_signal_phase(
         clipped_indices = np.where(np.abs(lfp) > clip_value)[0]
         if len(clipped_indices) > 0:
             clipped_cycles = np.unique(cycle_numbers[clipped_indices])
-            clipped_cycles = clipped_cycles[clipped_cycles < max_cycle]
             bad_cycles_set.update(clipped_cycles.astype(int))
 
-    # 2. Bad power cycles
+    # 2. Low-power cycles
     power_threshold = np.nanpercentile(power_per_cycle, power_thresh)
     bad_power_cycles = np.where(power_per_cycle < power_threshold)[0]
-    bad_power_cycles = bad_power_cycles[bad_power_cycles < max_cycle]
     bad_cycles_set.update(bad_power_cycles.astype(int))
 
     # 3. Bad length cycles
     cycle_length_lim = np.ceil(
-            1 / np.array([high_freq, low_freq]) * sampling_rate
-        ).astype(int)
+        1 / np.array([high_freq, low_freq]) * sampling_rate
+    ).astype(int)
     bad_length_mask = (bincount_cycles < cycle_length_lim[0]) | (
-            bincount_cycles > cycle_length_lim[1]
-        )
+        bincount_cycles > cycle_length_lim[1]
+    )
     bad_length_cycles = np.where(bad_length_mask)[0]
-    bad_length_cycles = bad_length_cycles[bad_length_cycles < max_cycle]
     bad_cycles_set.update(bad_length_cycles.astype(int))
 
-    # Create mask for bad samples efficiently
+    # Create mask of bad cycles
     is_bad_cycle = np.zeros(max_cycle, dtype=bool)
     if bad_cycles_set:
-        bad_cycles_array = np.array(list(bad_cycles_set), dtype=int)
-        is_bad_cycle[bad_cycles_array] = True
+        is_bad_cycle[np.array(list(bad_cycles_set), dtype=int)] = True
     bad_sample_mask = is_bad_cycle[cycle_numbers]
 
-    # Create output arrays for this channel
+    # Apply mask to outputs
     channel_phase = signal_phase.copy()
     channel_phase[bad_sample_mask] = np.nan
     signal_phase_out[:] = channel_phase
@@ -178,8 +199,17 @@ def get_signal_phase(
     channel_cycles[bad_sample_mask] = np.nan
     cycle_numbers_out[:] = channel_cycles
 
-    # Return with proper dimensionality
-    return signal_phase_out, cycle_numbers_out
+    # Compute cycle boundaries for valid cycles
+    cycle_boundaries = []
+    valid_cycles = np.unique(channel_cycles[~np.isnan(channel_cycles)]).astype(int)
+    for cycle in valid_cycles:
+        indices = np.where(channel_cycles == cycle)[0]
+        if len(indices) > 0:
+            start_idx = indices[0]
+            end_idx = indices[-1]
+            cycle_boundaries.append((cycle, start_idx, end_idx))
+
+    return signal_phase_out, cycle_numbers_out, cycle_boundaries
 
 
 def get_spike_phase(
