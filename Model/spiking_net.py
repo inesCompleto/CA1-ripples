@@ -1,5 +1,7 @@
 '''
-
+Parameters neural dynamics:
+    AA and BC from hippocampome
+    pyr cells from Skinner paper. 
     
 '''
 
@@ -14,77 +16,108 @@ dt = 0.01
 steps = ((tmax - tmin)/dt) // 1 
 t = np.linspace(tmin, tmax, int(steps))
 
-I_ext = 50
 
-# Pyramidal cells
-N_E=500
-g_leak = 0.1
-V_rest = -60
-Vpeak = 400
-Vreset = -400
+parameters_set = {
+    # PV+BC
+    'BC': {'k': 1.19, 'Vr': -57.63, 'Vth': -35.53, 'alpha': 0.005, 'beta': 0.22, 'C': 114, 'ujump': 2, 'Vreset': -48.7, 'Vpeak':21.72 },
+     
+    # AA
+    'AA': {'k': 9.83, 'Vr': -66.76, 'Vth': -65.78, 'alpha': 0.002, 'beta': 14.47, 'C': 234, 'ujump': 26, 'Vreset': -62.22, 'Vpeak':3.18 },
+    
+    # Pyramidal cells, Ferguson (2014)
+   'pyr': {'k': 3.3, 'Vr': -61.8, 'Vth': -57, 'alpha': 0.0012, 'beta': 3, 'C': 115, 'ujump': 10, 'Vreset': -65.8, 'Vpeak':22.6 }
 
+    # Pyramidal cells, hippocampome
+#    'pyr': {'k': 1.56, 'Vr': -69.36, 'Vth': -53.22, 'alpha': 0, 'beta': -17.25, 'C': 334, 'ujump': 16, 'Vreset': -60.22, 'Vpeak':25.46 }
+}
+
+BC = parameters_set['BC']
+AA = parameters_set['AA']
+E = parameters_set['pyr']
+
+
+I_ext = 500
+
+
+# PV+BC
+N_BC=1
+V_BC = np.zeros((N_BC,len(t)))
+V_BC[:,0] = -55
+u_BC = np.zeros((N_BC,len(t)))
+
+# AA
+N_AA=1
+V_AA = np.zeros((N_AA,len(t)))
+V_AA[:,0] = -55
+u_AA = np.zeros((N_AA,len(t)))
+
+# pyr cell
+N_E=1
 V_E = np.zeros((N_E,len(t)))
-V_E[:,0] = 20
-count_E = np.zeros(len(t))
+V_E[:,0] = -60
+u_E = np.zeros((N_E,len(t)))
 
-p_EE = 0.3 # connectivity probability
-conn_EE = np.zeros(N_E)
-num_ones = int(p_EE*N_E) 
-conn_EE[:num_ones] = 1
-g_EE=0
-tau_s=1
-s_EE=1 
-Er_E=0
 
 
 i=0
 
-while i < len(t)-1:
-
-    # QIF equations
-    g_EE = g_EE + dt*(-g_EE/tau_s + conn_EE*s_EE*count_E[i]) 
-    I_synE = g_EE*(Er_E - V_E[:,i])  
-    V_E[:,i+1] = V_E[:,i] + dt*(g_leak*(V_rest - V_E[:,i]) + I_synE + I_ext)
+while i < len(t)-1: 
     
+    # PV+BC
+    V_BC[:,i+1] = V_BC[:,i] + dt*(BC['k']*(V_BC[:,i] - BC['Vr'])*(V_BC[:,i] - BC['Vth']) - u_BC[:,i] + I_ext)/BC['C']
+    u_BC[:,i+1] = u_BC[:,i] + dt*(BC['alpha']*(BC['beta']*(V_BC[:,i] - BC['Vr']) - u_BC[:,i]) )
+    
+    for j in range(N_BC):
+        if V_BC[j,i+1]>=BC['Vpeak']:
+            V_BC[j,i+1]=BC['Vreset']
+            u_BC[j,i+1] = u_BC[j,i] +BC['ujump']    
+    
+    # AA
+    V_AA[:,i+1] = V_AA[:,i] + dt*(AA['k']*(V_AA[:,i] - AA['Vr'])*(V_AA[:,i] - AA['Vth']) - u_AA[:,i] + I_ext)/AA['C']
+    u_AA[:,i+1] = u_AA[:,i] + dt*(AA['alpha']*(AA['beta']*(V_AA[:,i] - AA['Vr']) - u_AA[:,i]) )
+    
+    for j in range(N_AA):
+        if V_AA[j,i+1]>=AA['Vpeak']:
+            V_AA[j,i+1]=AA['Vreset']
+            u_AA[j,i+1] = u_AA[j,i] +AA['ujump']
+ 
+    
+    # pyr cell
+    V_E[:,i+1] = V_E[:,i] + dt*(E['k']*(V_E[:,i] - E['Vr'])*(V_E[:,i] - E['Vth']) - u_E[:,i] + I_ext)/E['C']
+    u_E[:,i+1] = u_E[:,i] + dt*(E['alpha']*(E['beta']*(V_E[:,i] - E['Vr']) - u_E[:,i]) )
+
+    # Check for spike (threshold crossing)
     for j in range(N_E):
-        if V_E[j,i]>Vpeak:
-            V_E[j,i]=Vreset
-            count_E[i+1]=count_E[i+1]+1/(N_E*dt) # count number of neurons spiking at this time    
-            
+        if V_E[j,i+1]>=E['Vpeak']:
+            V_E[j,i+1]=E['Vreset']
+            u_E[j,i+1] = u_E[j,i] +E['ujump']
+ 
     i+=1
 
 
 # plot it
 
-f, (a0, a1, a2, a3) = plt.subplots(4, 1,sharex=True)
-a0.plot(t,V_E[0,:], color='k')
+f, (a0, a1, a2) = plt.subplots(3, 1,sharex=True)
+a0.plot(t,V_BC[0,:], color='k')
 a0.spines['right'].set_visible(False)
 a0.spines['top'].set_visible(False)
-a0.set_ylim([-400,400])
+#a0.set_ylim([-400,400])
 a0.tick_params(axis='both', labelsize=18)
 
-a1.plot(t,V_E[1,:], color='k')
+a1.plot(t,V_AA[0,:], color='k')
 a1.spines['right'].set_visible(False)
 a1.spines['top'].set_visible(False)
-a1.set_ylim([-400,400])
+#a1.set_ylim([-400,400])
 #a0.set_yticks(np.arange(0, 0.3+0.01, 0.2))
 a1.tick_params(axis='both', labelsize=18)
 
-a2.plot(t, V_E[2,:], color='k')
+a2.plot(t, V_E[0,:], color='k')
 a2.set_ylabel('Voltage (mV)', fontsize=25)
 a2.spines['right'].set_visible(False)
 a2.spines['top'].set_visible(False)
-a2.set_ylim([-400,400])
+#a2.set_ylim([-400,400])
 a2.tick_params(axis='both', labelsize=18)
 
-
-a3.plot(t, V_E[3,:], color='k')
-a3.spines['right'].set_visible(False)
-a3.spines['top'].set_visible(False)
-a3.tick_params(axis='both', labelsize=18)
-a3.set_ylim([-400,400])
-#a3.set_yticks(np.arange(-2, 3, 4))
-a3.set_xlabel('time (msec)', fontsize=25)
 
 f.tight_layout()
 
