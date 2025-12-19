@@ -36,31 +36,20 @@ V_reset_i = E_rest_i
 
 # Synaptic parameters
 # E to E (AMPA on pyramidal cells)
-tau_r_E_e = 0.5   # ms
-tau_d_E_e = 1.8   # ms
-g_peak_E_e = 0.9  # nS
+tau_d_ee = 1.8   # ms
+g_peak_ee = 0.9  # nS
 
-# I to E (GABA on pyramidal cells)
-tau_r_E_i = 0.4   # ms
-tau_d_E_i = 2.0   # ms
-g_peak_E_i = 9.0  # nS
+# I to E (GABA on pyramidal cells) 
+tau_d_ei = 2.0   # ms. post-pre
+g_peak_ei = 9.0  # nS
 
 # E to I (AMPA on interneurons)
-tau_r_I_e = 0.5   # ms
-tau_d_I_e = 1.2   # ms
-g_peak_I_e = 3.0  # nS
+tau_d_ie = 1.2   # ms
+g_peak_ie = 3.0  # nS
 
 # I to I (GABA on interneurons)
-tau_r_I_i = 0.45  # ms
-tau_d_I_i = 1.2   # ms
-g_peak_I_i = 5.0  # nS
-
-# Calculate inverse peaks for normalization
-invpeak_E_e = (tau_r_E_e / tau_d_E_e) ** (tau_d_E_e / (tau_r_E_e - tau_d_E_e))
-invpeak_E_i = (tau_r_E_i / tau_d_E_i) ** (tau_d_E_i / (tau_r_E_i - tau_d_E_i))
-invpeak_I_e = (tau_r_I_e / tau_d_I_e) ** (tau_d_I_e / (tau_r_I_e - tau_d_I_e))
-invpeak_I_i = (tau_r_I_i / tau_d_I_i) ** (tau_d_I_i / (tau_r_I_i - tau_d_I_i))
-
+tau_d_ii = 1.2   # ms
+g_peak_ii = 5.0  # nS
 
 
 # Sharp wave parameters
@@ -77,16 +66,15 @@ V_e[:,0] = np.random.normal(E_rest_e, 0.1, N_e)
 V_i = np.zeros((N_i,len(t)))
 V_i[:,0] = np.random.normal(E_rest_i, 0.1, N_i)
 
-# Synaptic conductance variables (double exponential)
-g_e_E = np.zeros(N_e)  # AMPA on E cells
-s_e_E = np.zeros(N_e)
-g_i_E = np.zeros(N_e)  # GABA on E cells
-s_i_E = np.zeros(N_e)
+#V_e = np.random.normal(E_rest_e, 0.1, N_e)
+#V_i = np.random.normal(E_rest_i, 0.1, N_i)
 
-g_e_I = np.zeros(N_i)  # AMPA on I cells
-s_e_I = np.zeros(N_i)
-g_i_I = np.zeros(N_i)  # GABA on I cells
-s_i_I = np.zeros(N_i)
+# Synaptic conductance variables (double exponential)
+g_ee = np.zeros(N_e)  # AMPA on E cells
+g_ei = np.zeros(N_e)  # GABA on E cells
+
+g_ie = np.zeros(N_i)  # AMPA on I cells
+g_ii = np.zeros(N_i)  # GABA on I cells
 
 # External drive conductance
 g_ext = np.zeros(N_e)
@@ -97,15 +85,16 @@ spikes_i = np.zeros((N_i, steps), dtype=bool)
 
 # Connectivity matrices
 np.random.seed(1)
-p_ee = 197.0 / N_e
-p_ii = 0.2
+p_ee = 0.01 # connectivity probability. post_pre
+p_ii = 0.2 
 p_ei = 0.1
 p_ie = 0.1
 
+
 conn_ee = (np.random.rand(N_e, N_e) < p_ee).astype(float)
 conn_ii = (np.random.rand(N_i, N_i) < p_ii).astype(float)
-conn_ei = (np.random.rand(N_i, N_e) < p_ei).astype(float)
-conn_ie = (np.random.rand(N_e, N_i) < p_ie).astype(float)
+conn_ei = (np.random.rand(N_e, N_i) < p_ei).astype(float)
+conn_ie = (np.random.rand(N_i, N_e) < p_ie).astype(float)
 
 # Generate sharp wave profile (Gaussian)
 def gaussian_form(t, sigma, mu):
@@ -128,79 +117,57 @@ for i, time in enumerate(t):
     g_chr_array[i, :] = amplitude * (1.0 / normalization) * gaussian_form(time, temporal_sigma, peak_time)
  
 # Synaptic delay (1 ms)
-delay_steps = int(1.0 / dt)
+#delay_steps = int(1.0 / dt)
+delay_steps = int(1.8 / dt)
 
 print("Starting simulation...")
 
 # Main simulation loop
 i=0 
-while i < len(t)-1: 
+while i < len(t)-(1+delay_steps): 
     
     # --- Excitatory neurons ---
     # External drive
     g_ext = g_chr_array[i, :]
-    
-    # Synaptic currents
-    I_syn_e = (g_e_E + g_ext) * (E_e - V_e[:,i]) + g_i_E * (E_i - V_e[:,i])
+
+    # Update synaptic conductances (decay)
+    input_ee = np.dot(conn_ee, spikes_e[:, i].astype(float))
+    g_ee = g_ee + dt * (-g_ee / tau_d_ee + g_peak_ee * input_ee/dt)
+    input_ei = np.dot(conn_ei, spikes_i[:, i].astype(float))  
+    g_ei = g_ei + dt * (-g_ei / tau_d_ei + g_peak_ei * input_ei/dt)
+      
+    # Total synaptic current for each E neuron (vectorized)
+    I_syn_e = (g_ee + g_ext) * (E_e - V_e[:,i]) + g_ei * (E_i - V_e[:,i])
     
     # Voltage update (Euler method)
     dV_e = (gl_e * (E_rest_e - V_e[:,i]) + I_syn_e) / C_e
     V_e[:,i+1] = V_e[:,i] + dt * dV_e
     
-    # Synaptic conductance dynamics
-    dg_e_E = (invpeak_E_e * s_e_E - g_e_E) / tau_d_E_e
-    ds_e_E = -s_e_E / tau_r_E_e
-    g_e_E += dt * dg_e_E
-    s_e_E += dt * ds_e_E
-    
-    dg_i_E = (invpeak_E_i * s_i_E - g_i_E) / tau_d_E_i
-    ds_i_E = -s_i_E / tau_r_E_i
-    g_i_E += dt * dg_i_E
-    s_i_E += dt * ds_i_E
     
     # Check for spikes
     spike_mask_e = V_e[:,i+1] >= V_th_e
     V_e[spike_mask_e,i+1] = V_reset_e
-    spikes_e[:, i] = spike_mask_e
+    spikes_e[:, i+delay_steps] = spike_mask_e
+  
     
+    # --- Inhibitory neurons ---  
+    # Update synaptic conductances (decay)
+    input_ie = np.dot(conn_ie, spikes_e[:, i].astype(float))
+    g_ie = g_ie + dt * (-g_ie / tau_d_ie + g_peak_ie * input_ie/dt)
+    input_ii = np.dot(conn_ii, spikes_i[:, i].astype(float))
+    g_ii = g_ii + dt * (-g_ii / tau_d_ii + g_peak_ii * input_ii/dt)  
     
-    # Synaptic currents
-    I_syn_i = g_e_I * (E_e - V_i[:,i]) + g_i_I * (E_I_i - V_i[:,i])
+    # Total synaptic current for each i neuron
+    I_syn_i = g_ie * (E_e - V_i[:,i]) + g_ii * (E_I_i - V_i[:,i])
     
     # Voltage update
     dV_i = (gl_i * (E_rest_i - V_i[:,i]) + I_syn_i) / C_i
     V_i[:,i+1] = V_i[:,i] + dt * dV_i
- 
-    
-    dg_i_I = (invpeak_I_i * s_i_I - g_i_I) / tau_d_I_i
-    ds_i_I = -s_i_I / tau_r_I_i
-    g_i_I += dt * dg_i_I
-    s_i_I += dt * ds_i_I
      
     # Check for spikes
     spike_mask_i = V_i[:,i+1] >= V_th_i
     V_i[spike_mask_i, i+1] = V_reset_i
-    spikes_i[:, i] = spike_mask_i
-    
-    # --- Synaptic transmission (with delay) ---
-    if i >= delay_steps:
-        delayed_i = i - delay_steps
-        
-        # E to E
-        input_ee = np.dot(conn_ee.T, spikes_e[:, delayed_i].astype(float))
-        s_e_E += g_peak_E_e * input_ee
-        
-        # I to E
-        input_ie = np.dot(conn_ie, spikes_i[:, delayed_i].astype(float))
-        s_i_E += g_peak_E_i * input_ie
-        
-        # E to I
-        input_ei = np.dot(conn_ei, spikes_e[:, delayed_i].astype(float))
-        s_e_I += g_peak_I_e * input_ei
-        
-        # I to I
-        input_ii = np.dot(conn_ii.T, spikes_i[:, delayed_i].astype(float))
-        s_i_I += g_peak_I_i * input_ii
+    spikes_i[:, i+delay_steps] = spike_mask_i
 
     i+=1
       
@@ -208,7 +175,7 @@ print("Simulation complete!")
 
 # --- Analysis ---
 # Calculate population rates with Gaussian smoothing
-resolution = 0.5  # ms
+resolution = 0.5  # ms 
 sigma_smooth = resolution / dt / 2.355  # Convert to std dev in time steps
 
 def smooth_rate(spike_array, N_neurons):
