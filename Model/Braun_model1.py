@@ -175,7 +175,7 @@ print("Simulation complete!")
 
 # --- Analysis ---
 # Calculate population rates with Gaussian smoothing
-resolution = 0.5  # ms 
+resolution = 0.5  # ms
 sigma_smooth = resolution / dt / 2.355  # Convert to std dev in time steps
 
 def smooth_rate(spike_array, N_neurons):
