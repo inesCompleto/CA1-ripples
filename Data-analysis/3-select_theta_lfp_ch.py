@@ -30,13 +30,14 @@ for trial in trial_files:
         selected_theta_tetrode,_ = most_common
      
         lfp_ch_idx = np.where(all_tetrodes == selected_theta_tetrode)[0] # lfp ch from selected tetrode    
-    
+        lfp_chosen_tetrode = f['lfp']['run'][lfp_ch_idx]
+
         # Use lfp channel with highest SNR
         n_channels = len(lfp_ch_idx)
         SNR_theta = np.zeros(n_channels)
     
         for ch in range(n_channels):
-            lfp = f['lfp']['run'][ch]
+            lfp = lfp_chosen_tetrode[ch]
 
             # Compute power spectral density (PSD)
             freqs, psd = welch(lfp, fs=eeg_sr, nperseg=int(eeg_sr), scaling='density')
