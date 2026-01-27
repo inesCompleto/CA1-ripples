@@ -1,0 +1,19 @@
+During sleep trials
+
+1) Select which EEG channel to use to search for ripple events:
+      - Bandpass filter EEG signal (100-250 Hz)
+      - Compute power envelope of filtered signals
+      - Choose channel with highest power standard deviation
+
+2) Detect ripple events on selected channel
+      - Compute threshold to id ripples as the 99th percentile of power of selected channel
+      - Find peaks on selected channel where power is above threshold for at least 5 ms
+      - find beginning and end of ripple event by finding extremes of peak where power drops below mean+std  
+
+3) Detect slow-wave sleep epochs (where ripples are more likely to be happening):
+      - Compute mean speed during sleep trials. Consider epochs where mean speed < 2.5cm/s
+      - Compute theta/delta ratio:
+         Select channel with highest delta power
+      - Find epochs where mean speed < 2.5 cm/s and TD ratio < 2
+
+4) Keep ripples events ‘inside’ sws epochs

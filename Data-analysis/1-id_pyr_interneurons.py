@@ -73,8 +73,8 @@ for file_name in trial_files:
 
             # Compute autocorrelation only for lags up to max_lag
             for lag in range(max_slid + 1):
-                overlap = spike_train[:len_spk_train-lag] * spike_train[lag:]
-                autocorr[lag] = np.sum(overlap)
+                overlap = spike_train[:len_spk_train-lag] * spike_train[lag:] # 1 if there is a spike at t and t+lag, 0 otherwise
+                autocorr[lag] = np.sum(overlap) # sums all coincident spike pairs 
 
             lags = np.arange(0, max_slid + 1)*bin_size
 

@@ -1,0 +1,22 @@
+Identify pyramidal cells and interneurons (using awake trials)
+
+Only consider neurons that are spiking 'enough' (more than 75 spikes in entire trial)
+
+Use first moment and spike width to id pyramidal cells and interneurons (from Muessig et al., 2019):
+       - Pyramidal cells: spike width >= 300 ms and first moment <= 25 ms
+       - Interneurons: spike width < 300 ms and first moment > 25 ms
+
+Spike width already have. Need to compute first moment.
+
+Computing FIRST MOMENT:
+1) Get spike train from spike times
+2) Compute autocorrelation up to a lag of 50ms. This ensures we don't include local maximums due to theta cycles, which have a time scale of 100ms.
+3) Compute first moment (mean lag weighted by autocorrelation, excluding t=0)
+
+
+How to interpret results?
+- sharp peak of autocorrelation in beginning: probably bursting -> weighted mean lag will be a small value.
+- peak in beginning that decays slowly: probably not bursting -> weighted mean lag will be bigger.
+
+Extra notes:
+TEMPORAL AUTOCORRELOGRAM: It represents the spike timing relative to each spike across the spike train. Useful to get info about refractory period, burst tendency, rhythmic firing,...

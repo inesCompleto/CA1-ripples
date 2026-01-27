@@ -1,0 +1,14 @@
+Analyze theta spiking phase during awake trials
+
+1) Select which EEG channel to use to search for theta events:
+      - Select lfp ch from tetrode with most pyramidal cells recordings (i.e. lfp ch with highest SNR)
+
+2) Redefine theta around theta peak of this channel (theta frequency changes with age)
+    - Filter lfp signal for theta frequencies (5-11Hz)
+    - Find peak of PDS
+    - Redefine theta as peak +/- 3Hz
+
+3) Create phase interpolator
+
+4) Transform LFP signal into phase
+
