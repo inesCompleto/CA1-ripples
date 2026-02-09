@@ -21,11 +21,8 @@ steps = int((tmax - tmin) / dt)
 t = np.linspace(tmin, tmax, steps)
 
 # Network size
-#N_e = 12000  # Excitatory neurons
-#N_i = 200    # Inhibitory neurons
-
-N_e = 6000
-N_i = 100
+N_e = 12000  # Excitatory neurons
+N_i = 200    # Inhibitory neurons
 
 
 # Neuron parameters
@@ -46,25 +43,14 @@ parameters_set = {
 I = parameters_set['BC']
 E = parameters_set['pyr']
 
-
-# Neuron parameters - Excitatory
-E_rest_e = -67.0  # mV
+# Synaptic parameters
+# Excitatory
 E_e = 0.0         # mV (excitatory reversal)
 E_i = -68.0       # mV (inhibitory reversal)
-C_e = 275.0       # pF
-gl_e = 25.0       # nS
-V_th_e = -50.0    # mV (threshold)
-V_reset_e = E_rest_e
 
-# Neuron parameters - Inhibitory
-E_rest_i = -65.0  # mV
+# Inhibitory
 E_I_i = -75.0     # mV (inhibitory reversal for I cells)
-C_i = 100.0       # pF
-gl_i = 10.0       # nS
-V_th_i = -52.0    # mV
-V_reset_i = E_rest_i
 
-# Synaptic parameters
 # E to E (AMPA on pyramidal cells)
 tau_d_ee = 1.8   # ms
 g_peak_ee = 0.9  # nS
@@ -86,7 +72,8 @@ g_peak_ii = 5.0  # nS
 peak_time = 50.0   # ms
 temporal_sigma = 10.0  # ms
 sharp_wave_amplitude = 65.0  # nS
-n_excited = 400
+#n_excited = 400
+n_excited = 800
 amplitude_CV = 0.5
 
 # Initialize state variables 
@@ -116,8 +103,8 @@ spikes_i = np.zeros((N_i, steps), dtype=bool)
 np.random.seed(1)
 p_ee = 0.01 # connectivity probability. post_pre
 p_ii = 0.2 
-p_ei = 0.1
-p_ie = 0.1
+p_ei = 0.17
+p_ie = 0.17
 
 conn_ee = (np.random.rand(N_e, N_e) < p_ee).astype(float)
 conn_ii = (np.random.rand(N_i, N_i) < p_ii).astype(float)
@@ -174,8 +161,8 @@ while i < len(t)-(1+delay_steps):
     u_e += dt* du_e
     
     # Check for spikes
-    spike_mask_e = V_e[:,i+1] >= V_th_e
-    V_e[spike_mask_e,i+1] = V_reset_e
+    spike_mask_e = V_e[:,i+1] >= E['Vpeak']
+    V_e[spike_mask_e,i+1] = E['Vreset']
     spikes_e[:, i+delay_steps] = spike_mask_e
   
     
@@ -196,8 +183,8 @@ while i < len(t)-(1+delay_steps):
     u_i += dt* du_i    
      
     # Check for spikes
-    spike_mask_i = V_i[:,i+1] >= V_th_i
-    V_i[spike_mask_i, i+1] = V_reset_i
+    spike_mask_i = V_i[:,i+1] >= I['Vpeak']
+    V_i[spike_mask_i, i+1] = I['Vreset']
     spikes_i[:, i+delay_steps] = spike_mask_i
 
     i+=1
