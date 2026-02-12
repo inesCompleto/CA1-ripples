@@ -79,8 +79,7 @@ def detect_ripples(power_env, min_dur, max_dur, eeg_sr):
 
     # Extend beggining and end of ripple events
     mean = np.mean(power_env)
-    std = np.std(power_env)
-    thr_ripple_begg_end = mean+std
+    thr_ripple_begg_end = mean
 
     # Extend the start and end of ripple event to when power goes below mean
     for j,(left_idx,right_idx) in enumerate(ripp_indices):
