@@ -101,12 +101,10 @@ def detect_ripples(power_env, min_dur, max_dur, eeg_sr):
     return ripp_indices
 
     
-def ripp_modulation(norm_firing_rate, ripp_events, bin_fr=0.005, bins_notRipp=10, bins_ripp=10, lag_default=0.05):
+def ripp_modulation(firing_rate, ripp_events, bin_fr=0.005, bins_notRipp=10, bins_ripp=10, lag_default=0.05):
 
     total_ripples = len(ripp_events)
     
-    norm_fr_ripp = [] # store firing rate during ripples
-    norm_fr_nonripp = [] # store firing rate during non-ripple periods
     pre_ripp, ripp, post_ripp = [], [], [] # store normalized zscored f.r. before, during and after ripp
         
     for j, (start,end) in enumerate(ripp_events): 
@@ -136,18 +134,15 @@ def ripp_modulation(norm_firing_rate, ripp_events, bin_fr=0.005, bins_notRipp=10
         borders = np.array([start-lag, start, end, end+lag])/bin_fr
         
         
-        pre_ripp_fr = norm_firing_rate[int(borders[0]):int(borders[1])]
-        norm_fr_nonripp.extend(pre_ripp_fr) # to compute mean non ripp activity
+        pre_ripp_fr = firing_rate[int(borders[0]):int(borders[1])]
         norm_pre = sp.norm_time(pre_ripp_fr, number_bins=bins_notRipp) # Normalized time
         pre_ripp.append(norm_pre) # to compute av firing pattern before/during and after ripp
             
-        ripp_fr = norm_firing_rate[int(borders[1]):int(borders[2])]
-        norm_fr_ripp.extend(ripp_fr)
+        ripp_fr = firing_rate[int(borders[1]):int(borders[2])]
         norm_ripp = sp.norm_time(ripp_fr, number_bins=bins_ripp)
         ripp.append(norm_ripp)
             
-        post_ripp_fr = norm_firing_rate[int(borders[2]):int(borders[3])]
-        norm_fr_nonripp.extend(post_ripp_fr)
+        post_ripp_fr = firing_rate[int(borders[2]):int(borders[3])]
         norm_post = sp.norm_time(post_ripp_fr, number_bins=bins_notRipp)
         post_ripp.append(norm_post)
         
@@ -155,12 +150,19 @@ def ripp_modulation(norm_firing_rate, ripp_events, bin_fr=0.005, bins_notRipp=10
     ripp_mean = np.mean(ripp, axis=0)   
     post_ripp_mean = np.mean(post_ripp, axis=0)
     all_fr = np.concatenate([pre_ripp_mean, ripp_mean, post_ripp_mean]) 
+
+    # Z-score the entire window using pre-ripple baseline only
+    baseline_mean = np.mean(pre_ripp_mean)
+    baseline_std = np.std(pre_ripp_mean) + 1e-8
+    all_fr_zscored = (all_fr - baseline_mean) / baseline_std
+
+    # Modulation score: now in units of baseline std deviations
+    # making it comparable across neurons with different firing rates
+    mean_ripp_act = np.mean(ripp_mean)
+    mean_nonripp_act = np.mean(np.concatenate([pre_ripp_mean, post_ripp_mean]))
+    mod = (mean_ripp_act - mean_nonripp_act) / (baseline_std)    
         
-    mean_ripp_act = np.mean(norm_fr_ripp)
-    mean_nonripp_act = np.mean(norm_fr_nonripp)
-    ripp_modulation = mean_ripp_act - mean_nonripp_act
-        
-    return all_fr, ripp_modulation
+    return all_fr_zscored, mod
 
 
 def detect_brain_states(
