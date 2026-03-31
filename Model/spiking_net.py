@@ -12,6 +12,7 @@ From Frankland (Ramsaran): weak lateral inhibition
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
+from scipy.stats import cauchy
 
 # Simulation parameters
 tmin = 0.0
@@ -42,6 +43,12 @@ parameters_set = {
 
 I = parameters_set['BC']
 E = parameters_set['pyr']
+
+# Gaussian distributuion for background current
+Delta=1
+etabar=0
+eta_i = cauchy.rvs(loc=etabar, scale=Delta, size=N_i)
+eta_e = cauchy.rvs(loc=etabar, scale=Delta, size=N_e)
 
 # Synaptic parameters
 # Excitatory
@@ -155,7 +162,7 @@ while i < len(t)-(1+delay_steps):
     I_syn_e = (g_ee + g_ext) * (E_e - V_e[:,i]) + g_ei * (E_i - V_e[:,i])
     
     # Voltage update (Euler method)
-    dV_e = (E['k']*(V_e[:,i] - E['Vr'])*(V_e[:,i] - E['Vth']) - u_e[:,i] + I_syn_e)/E['C']
+    dV_e = (E['k']*(V_e[:,i] - E['Vr'])*(V_e[:,i] - E['Vth']) - u_e[:,i] + I_syn_e + eta_e)/E['C']
     du_e = E['alpha']*(E['beta']*(V_e[:,i] - E['Vr']) - u_e[:,i])    
     V_e[:,i+1] = V_e[:,i] + dt * dV_e
     u_e[:,i+1] = u_e[:,i] + dt* du_e
@@ -178,7 +185,7 @@ while i < len(t)-(1+delay_steps):
     I_syn_i = g_ie * (E_e - V_i[:,i]) + g_ii * (E_I_i - V_i[:,i])
     
     # Voltage update
-    dV_i = (I['k']*(V_i[:,i] - I['Vr'])*(V_i[:,i] - I['Vth']) - u_i[:,i] + I_syn_i)/I['C']
+    dV_i = (I['k']*(V_i[:,i] - I['Vr'])*(V_i[:,i] - I['Vth']) - u_i[:,i] + I_syn_i + eta_i)/I['C']
     du_i = I['alpha']*(I['beta']*(V_i[:,i] - I['Vr']) - u_i[:,i])    
     V_i[:,i+1] = V_i[:,i] + dt * dV_i
     u_i[:,i+1] = u_i[:,i] + dt* du_i    
