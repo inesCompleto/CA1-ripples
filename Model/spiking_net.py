@@ -60,19 +60,19 @@ E_I_i = -75.0     # mV (inhibitory reversal for I cells)
 
 # E to E (AMPA on pyramidal cells)
 tau_d_ee = 1.8   # ms
-g_peak_ee = 0.9  # nS
+g_peak_ee = 0.9*N_e  # nS
 
 # I to E (GABA on pyramidal cells) 
 tau_d_ei = 2.0   # ms. post-pre
-g_peak_ei = 9.0  # nS
+g_peak_ei = 9.0*N_i  # nS
 
 # E to I (AMPA on interneurons)
 tau_d_ie = 1.2   # ms
-g_peak_ie = 3.0  # nS
+g_peak_ie = 3.0*N_e  # nS
 
 # I to I (GABA on interneurons)
 tau_d_ii = 1.2   # ms
-g_peak_ii = 5.0  # nS
+g_peak_ii = 5.0*N_i  # nS
 
 
 # Sharp wave parameters
@@ -154,9 +154,9 @@ while i < len(t)-(1+delay_steps):
 
     # Update synaptic conductances (decay)
     input_ee = np.dot(conn_ee, spikes_e[:, i].astype(float))
-    g_ee = g_ee + dt * (-g_ee / tau_d_ee + g_peak_ee * input_ee/dt)
+    g_ee = g_ee + dt * (-g_ee / tau_d_ee + g_peak_ee * input_ee/(N_e*dt))
     input_ei = np.dot(conn_ei, spikes_i[:, i].astype(float))  
-    g_ei = g_ei + dt * (-g_ei / tau_d_ei + g_peak_ei * input_ei/dt)
+    g_ei = g_ei + dt * (-g_ei / tau_d_ei + g_peak_ei * input_ei/(N_i*dt))
       
     # Total synaptic current for each E neuron (vectorized)
     I_syn_e = (g_ee + g_ext) * (E_e - V_e[:,i]) + g_ei * (E_i - V_e[:,i])
@@ -177,9 +177,9 @@ while i < len(t)-(1+delay_steps):
     # --- Inhibitory neurons ---  
     # Update synaptic conductances (decay)
     input_ie = np.dot(conn_ie, spikes_e[:, i].astype(float))
-    g_ie = g_ie + dt * (-g_ie / tau_d_ie + g_peak_ie * input_ie/dt)
+    g_ie = g_ie + dt * (-g_ie / tau_d_ie + g_peak_ie * input_ie/(N_e*dt))
     input_ii = np.dot(conn_ii, spikes_i[:, i].astype(float))
-    g_ii = g_ii + dt * (-g_ii / tau_d_ii + g_peak_ii * input_ii/dt)  
+    g_ii = g_ii + dt * (-g_ii / tau_d_ii + g_peak_ii * input_ii/(N_i*dt))  
     
     # Total synaptic current for each i neuron
     I_syn_i = g_ie * (E_e - V_i[:,i]) + g_ii * (E_I_i - V_i[:,i])
