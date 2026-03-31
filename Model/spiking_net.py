@@ -22,8 +22,8 @@ steps = int((tmax - tmin) / dt)
 t = np.linspace(tmin, tmax, steps)
 
 # Network size
-N_e = 12000  # Excitatory neurons
-N_i = 200    # Inhibitory neurons
+N_e = 1000  # Excitatory neurons
+N_i = 1000    # Inhibitory neurons
 
 
 # Neuron parameters
