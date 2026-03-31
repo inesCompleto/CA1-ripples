@@ -71,7 +71,7 @@ g_peak_ii = 5.0  # nS
 # Sharp wave parameters
 peak_time = 50.0   # ms
 temporal_sigma = 10.0  # ms
-sharp_wave_amplitude = 65.0  # nS
+sharp_wave_amplitude = 60.0  # nS
 #n_excited = 400
 n_excited = 800
 amplitude_CV = 0.5
@@ -79,11 +79,11 @@ amplitude_CV = 0.5
 # Initialize state variables 
 V_e = np.zeros((N_e,len(t)))
 V_e[:,0] = np.random.normal(E['Vr'], 0.1, N_e)
-u_e = np.zeros(N_e)
+u_e = np.zeros((N_e,len(t)))
 
 V_i = np.zeros((N_i,len(t)))
 V_i[:,0] = np.random.normal(I['Vr'], 0.1, N_i)
-u_i = np.zeros(N_i)
+u_i = np.zeros((N_i,len(t)))
 
 # Synaptic conductance variables (double exponential)
 g_ee = np.zeros(N_e)  # AMPA on E cells
@@ -155,14 +155,15 @@ while i < len(t)-(1+delay_steps):
     I_syn_e = (g_ee + g_ext) * (E_e - V_e[:,i]) + g_ei * (E_i - V_e[:,i])
     
     # Voltage update (Euler method)
-    dV_e = (E['k']*(V_e[:,i] - E['Vr'])*(V_e[:,i] - E['Vth']) - u_e + I_syn_e)/E['C']
-    du_e = E['alpha']*(E['beta']*(V_e[:,i] - E['Vr']) - u_e)    
+    dV_e = (E['k']*(V_e[:,i] - E['Vr'])*(V_e[:,i] - E['Vth']) - u_e[:,i] + I_syn_e)/E['C']
+    du_e = E['alpha']*(E['beta']*(V_e[:,i] - E['Vr']) - u_e[:,i])    
     V_e[:,i+1] = V_e[:,i] + dt * dV_e
-    u_e += dt* du_e
+    u_e[:,i+1] = u_e[:,i] + dt* du_e
     
     # Check for spikes
     spike_mask_e = V_e[:,i+1] >= E['Vpeak']
     V_e[spike_mask_e,i+1] = E['Vreset']
+    u_e[spike_mask_e,i+1]=u_e[spike_mask_e,i] + E['ujump']    
     spikes_e[:, i+delay_steps] = spike_mask_e
   
     
@@ -177,14 +178,15 @@ while i < len(t)-(1+delay_steps):
     I_syn_i = g_ie * (E_e - V_i[:,i]) + g_ii * (E_I_i - V_i[:,i])
     
     # Voltage update
-    dV_i = (I['k']*(V_i[:,i] - I['Vr'])*(V_i[:,i] - I['Vth']) - u_i + I_syn_i)/I['C']
-    du_i = I['alpha']*(I['beta']*(V_i[:,i] - I['Vr']) - u_i)    
+    dV_i = (I['k']*(V_i[:,i] - I['Vr'])*(V_i[:,i] - I['Vth']) - u_i[:,i] + I_syn_i)/I['C']
+    du_i = I['alpha']*(I['beta']*(V_i[:,i] - I['Vr']) - u_i[:,i])    
     V_i[:,i+1] = V_i[:,i] + dt * dV_i
-    u_i += dt* du_i    
+    u_i[:,i+1] = u_i[:,i] + dt* du_i    
      
     # Check for spikes
     spike_mask_i = V_i[:,i+1] >= I['Vpeak']
     V_i[spike_mask_i, i+1] = I['Vreset']
+    u_i[spike_mask_i,i+1]=u_i[spike_mask_i,i] + I['ujump']
     spikes_i[:, i+delay_steps] = spike_mask_i
 
     i+=1
